@@ -4,6 +4,7 @@ import {
   type TransactionType,
 } from '../../../shared/types/prisma-enums.js';
 import type { Decimal } from 'decimal.js';
+import type { Logger } from 'pino';
 import type { AuditService } from '../../audit/application/audit.service.js';
 import type { RecurrenceDetectorService } from '../../recurrence/application/recurrence-detector.service.js';
 import type { TransactionRepository } from '../infra/transaction.repository.js';
@@ -13,6 +14,7 @@ export class CreateTransactionUseCase {
     private readonly transactions: TransactionRepository,
     private readonly audit: AuditService,
     private readonly recurrence: RecurrenceDetectorService,
+    private readonly log?: Logger,
   ) {}
 
   async execute(input: {
@@ -57,7 +59,13 @@ export class CreateTransactionUseCase {
       },
     });
 
-    void this.recurrence.refreshForUser(input.userId).catch(() => undefined);
+    void this.recurrence.refreshForUser(input.userId).catch((err: unknown) => {
+      if (this.log) {
+        this.log.warn({ err, userId: input.userId }, 'Falha ao atualizar padrões recorrentes');
+      } else {
+        console.error('[create-transaction] recurrence refresh', err);
+      }
+    });
 
     return tx;
   }

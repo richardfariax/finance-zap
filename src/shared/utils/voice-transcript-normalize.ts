@@ -1,6 +1,3 @@
-/**
- * Limpa transcrições de voz (Whisper etc.) para o parser financeiro entender melhor.
- */
 export function normalizeVoiceNoteText(raw: string): string {
   let t = raw.replace(/\s+/gu, ' ').trim();
   if (!t) return t;

@@ -7,12 +7,16 @@ export class EnsureUserUseCase {
   async execute(params: {
     whatsappNumber: string;
     displayName?: string | null;
+    waChatJid?: string | null;
     timezone?: string;
     locale?: string;
   }): Promise<User> {
     const existing = await this.users.findByWhatsappNumber(params.whatsappNumber);
     if (existing) {
-      return existing;
+      return this.users.mergeChatProfile(existing.id, {
+        displayName: params.displayName ?? undefined,
+        waChatJid: params.waChatJid ?? undefined,
+      });
     }
     return this.users.create({
       whatsappNumber: params.whatsappNumber,

@@ -21,10 +21,6 @@ function extractMoneyToken(text: string): Decimal | null {
   return new Decimal(n);
 }
 
-/**
- * Valor a usar ao corrigir o último lançamento: prefere o número depois de para/pra/era/foi;
- * senão, o último valor monetário do texto (ex.: "uber 10, corrige último para 59").
- */
 export function extractMoneyForLastTxCorrection(raw: string): Decimal | null {
   let lastPara = -1;
   const rePara = /\b(para|pra)\b/giu;
@@ -71,16 +67,12 @@ function hasCorrectionVerb(n: string): boolean {
   );
 }
 
-/** Frase pedindo ajuste de valor do último, mas sem número identificável. */
 export function isLastTxAmountCorrectionMissingValue(raw: string): boolean {
   const n = normalizeForMatch(raw);
   if (!hasUltimoRef(n) || !hasCorrectionVerb(n)) return false;
   return extractMoneyForLastTxCorrection(raw) === null;
 }
 
-/**
- * Trecho seguinte pode completar "corrige o último" → "corrige o último, 59,90" ou ", era 50".
- */
 function isCorrectionValueTailSegment(seg: string): boolean {
   const t = seg.trim();
   if (isMoneyOnlySegment(t)) return true;
@@ -91,10 +83,6 @@ function isCorrectionValueTailSegment(seg: string): boolean {
   return false;
 }
 
-/**
- * Divide por vírgula (preservando decimais PT-BR) e junta de novo pedaços de correção
- * partidos por vírgula coloquial ("corrige o último, era 50").
- */
 export function prepareTransactionInboundSegments(text: string): string[] {
   const parts = splitFinancialSegments(text);
   const merged: string[] = [];

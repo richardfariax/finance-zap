@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '22'
+  DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/ci?schema=public
+
+jobs:
+  quality:
+    name: Lint, types, tests e build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: yarn
+
+      - name: Instalar dependências
+        run: yarn install --frozen-lockfile
+
+      - name: Qualidade (mesmo fluxo do pre-commit local)
+        run: node scripts/ci-check.mjs
+        env:
+          DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/ci?schema=public
+          SKIP_DOCKER: '1'
+
+  docker-image:
+    name: Docker build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build imagem — estágio build (Node + tsc)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: finance-zap:ci
+          target: build
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

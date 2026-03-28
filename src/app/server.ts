@@ -43,6 +43,7 @@ async function main(): Promise<void> {
   }
 
   await wiring.baileys.start();
+  wiring.proactive.start();
 
   await app.listen({ port: env.PORT, host: '0.0.0.0' });
   logger.info({ port: env.PORT }, 'HTTP ouvindo');

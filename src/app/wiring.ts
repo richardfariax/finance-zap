@@ -4,6 +4,7 @@ import { AuditService } from '../modules/audit/application/audit.service.js';
 import { CategoryRepository } from '../modules/categories/infra/category.repository.js';
 import { PendingConfirmationRepository } from '../modules/confirmations/infra/pending-confirmation.repository.js';
 import { IngestInboundUseCase } from '../modules/messages/application/ingest-inbound.use-case.js';
+import { ProactiveOutreachService } from '../modules/notifications/application/proactive-outreach.service.js';
 import { MessageRepository } from '../modules/messages/infra/message.repository.js';
 import { RecurrenceDetectorService } from '../modules/recurrence/application/recurrence-detector.service.js';
 import { ReportsService } from '../modules/reports/application/reports.service.js';
@@ -20,6 +21,7 @@ export interface AppWiring {
   reports: ReportsService;
   transactions: TransactionRepository;
   users: UserRepository;
+  proactive: ProactiveOutreachService;
 }
 
 export function buildWiring(logger?: Logger): AppWiring {
@@ -33,11 +35,14 @@ export function buildWiring(logger?: Logger): AppWiring {
   const recurrence = new RecurrenceDetectorService();
   const reports = new ReportsService(transactions, categories);
   const ensureUser = new EnsureUserUseCase(users);
-  const createTx = new CreateTransactionUseCase(transactions, audit, recurrence);
+  const createTx = new CreateTransactionUseCase(transactions, audit, recurrence, logger);
 
   const baileysHolder: { service: BaileysService | null } = { service: null };
 
   const outbound: OutboundMessagesPort = {
+    canSend(): boolean {
+      return baileysHolder.service?.isSendReady() ?? false;
+    },
     async sendText(toJid: string, text: string): Promise<void> {
       const svc = baileysHolder.service;
       if (!svc) {
@@ -47,8 +52,11 @@ export function buildWiring(logger?: Logger): AppWiring {
     },
   };
 
+  const proactive = new ProactiveOutreachService(users, reports, outbound, logger);
+
   const ingest = new IngestInboundUseCase(
     ensureUser,
+    users,
     messages,
     transactions,
     categories,
@@ -65,5 +73,5 @@ export function buildWiring(logger?: Logger): AppWiring {
   const baileys = new BaileysService(ingest, logger);
   baileysHolder.service = baileys;
 
-  return { ingest, baileys, reports, transactions, users };
+  return { ingest, baileys, reports, transactions, users, proactive };
 }

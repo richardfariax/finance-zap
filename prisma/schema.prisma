@@ -1,5 +1,6 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -63,21 +64,26 @@ enum RecurringFrequency {
 }
 
 model User {
-  id              String   @id @default(uuid()) @db.Uuid
-  whatsappNumber  String   @unique @map("whatsapp_number")
-  displayName     String?  @map("display_name")
-  timezone        String   @default("America/Sao_Paulo")
-  locale          String   @default("pt-BR")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  id                      String    @id @default(uuid()) @db.Uuid
+  whatsappNumber          String    @unique @map("whatsapp_number")
+  displayName             String?   @map("display_name")
+  waChatJid               String?   @map("wa_chat_jid")
+  timezone                String    @default("America/Sao_Paulo")
+  locale                  String    @default("pt-BR")
+  onboardingWelcomeSentAt DateTime? @map("onboarding_welcome_sent_at")
+  lastInboundAt           DateTime? @map("last_inbound_at")
+  lastDailySummaryForDate String?   @map("last_daily_summary_for_date")
+  lastPinNudgeAt          DateTime? @map("last_pin_nudge_at")
+  createdAt               DateTime  @default(now()) @map("created_at")
+  updatedAt               DateTime  @updatedAt @map("updated_at")
 
-  messages              Message[]
-  transactions          Transaction[]
-  categories            Category[]
-  rules                 Rule[]
-  recurringPatterns     RecurringPattern[]
-  auditLogs             AuditLog[]
-  pendingConfirmations  PendingConfirmation[]
+  messages             Message[]
+  transactions         Transaction[]
+  categories           Category[]
+  rules                Rule[]
+  recurringPatterns    RecurringPattern[]
+  auditLogs            AuditLog[]
+  pendingConfirmations PendingConfirmation[]
 
   @@map("users")
 }
@@ -108,19 +114,19 @@ model Message {
 }
 
 model Category {
-  id              String       @id @default(uuid()) @db.Uuid
-  userId          String?      @map("user_id") @db.Uuid
-  name            String
-  normalizedName  String       @map("normalized_name")
-  kind            CategoryKind
-  isSystem        Boolean      @default(false) @map("is_system")
-  createdAt       DateTime     @default(now()) @map("created_at")
-  updatedAt       DateTime     @updatedAt @map("updated_at")
+  id             String       @id @default(uuid()) @db.Uuid
+  userId         String?      @map("user_id") @db.Uuid
+  name           String
+  normalizedName String       @map("normalized_name")
+  kind           CategoryKind
+  isSystem       Boolean      @default(false) @map("is_system")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
 
-  user               User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  transactions       Transaction[]
-  rules              Rule[]
-  recurringPatterns  RecurringPattern[]
+  user              User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions      Transaction[]
+  rules             Rule[]
+  recurringPatterns RecurringPattern[]
 
   @@index([userId, normalizedName])
   @@index([isSystem, normalizedName])
@@ -175,16 +181,16 @@ model Rule {
 }
 
 model RecurringPattern {
-  id              String              @id @default(uuid()) @db.Uuid
-  userId          String              @map("user_id") @db.Uuid
+  id              String             @id @default(uuid()) @db.Uuid
+  userId          String             @map("user_id") @db.Uuid
   fingerprint     String
-  description     String              @db.Text
-  categoryId      String?             @map("category_id") @db.Uuid
-  estimatedAmount Decimal?            @map("estimated_amount") @db.Decimal(18, 4)
-  frequency       RecurringFrequency  @default(UNKNOWN)
-  lastDetectedAt  DateTime            @map("last_detected_at")
-  createdAt       DateTime            @default(now()) @map("created_at")
-  updatedAt       DateTime            @updatedAt @map("updated_at")
+  description     String             @db.Text
+  categoryId      String?            @map("category_id") @db.Uuid
+  estimatedAmount Decimal?           @map("estimated_amount") @db.Decimal(18, 4)
+  frequency       RecurringFrequency @default(UNKNOWN)
+  lastDetectedAt  DateTime           @map("last_detected_at")
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
 
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)

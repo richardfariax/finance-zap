@@ -1,7 +1,3 @@
-/**
- * Enums do Prisma via `$Enums`: tipos + objetos em runtime.
- * Evita TS2305 ao importar `ConfidenceLevel`, `TransactionType` etc. direto de `@prisma/client`.
- */
 import { $Enums } from '@prisma/client';
 
 export type ConfidenceLevel = $Enums.ConfidenceLevel;

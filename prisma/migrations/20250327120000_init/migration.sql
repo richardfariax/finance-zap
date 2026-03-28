@@ -1,31 +1,21 @@
--- CreateEnum
 CREATE TYPE "MessageProvider" AS ENUM ('WHATSAPP');
 
--- CreateEnum
 CREATE TYPE "MessageDirection" AS ENUM ('INBOUND', 'OUTBOUND');
 
--- CreateEnum
 CREATE TYPE "MessageType" AS ENUM ('TEXT', 'IMAGE', 'AUDIO', 'VIDEO', 'DOCUMENT', 'OTHER');
 
--- CreateEnum
 CREATE TYPE "TransactionType" AS ENUM ('EXPENSE', 'INCOME', 'TRANSFER');
 
--- CreateEnum
 CREATE TYPE "TransactionStatus" AS ENUM ('PENDING', 'CONFIRMED', 'CANCELLED');
 
--- CreateEnum
 CREATE TYPE "ConfidenceLevel" AS ENUM ('HIGH', 'MEDIUM', 'LOW');
 
--- CreateEnum
 CREATE TYPE "CategoryKind" AS ENUM ('EXPENSE', 'INCOME', 'BOTH');
 
--- CreateEnum
 CREATE TYPE "RuleMatchType" AS ENUM ('CONTAINS', 'STARTS_WITH', 'REGEX', 'NORMALIZED_EQUALS');
 
--- CreateEnum
 CREATE TYPE "RecurringFrequency" AS ENUM ('WEEKLY', 'MONTHLY', 'UNKNOWN');
 
--- CreateTable
 CREATE TABLE "users" (
     "id" UUID NOT NULL,
     "whatsapp_number" TEXT NOT NULL,
@@ -38,7 +28,6 @@ CREATE TABLE "users" (
     CONSTRAINT "users_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
 CREATE TABLE "messages" (
     "id" UUID NOT NULL,
     "user_id" UUID NOT NULL,
@@ -59,7 +48,6 @@ CREATE TABLE "messages" (
     CONSTRAINT "messages_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
 CREATE TABLE "categories" (
     "id" UUID NOT NULL,
     "user_id" UUID,
@@ -73,7 +61,6 @@ CREATE TABLE "categories" (
     CONSTRAINT "categories_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
 CREATE TABLE "transactions" (
     "id" UUID NOT NULL,
     "user_id" UUID NOT NULL,
@@ -95,7 +82,6 @@ CREATE TABLE "transactions" (
     CONSTRAINT "transactions_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
 CREATE TABLE "rules" (
     "id" UUID NOT NULL,
     "user_id" UUID NOT NULL,
@@ -112,7 +98,6 @@ CREATE TABLE "rules" (
     CONSTRAINT "rules_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
 CREATE TABLE "recurring_patterns" (
     "id" UUID NOT NULL,
     "user_id" UUID NOT NULL,
@@ -128,7 +113,6 @@ CREATE TABLE "recurring_patterns" (
     CONSTRAINT "recurring_patterns_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
 CREATE TABLE "audit_logs" (
     "id" UUID NOT NULL,
     "user_id" UUID,
@@ -142,7 +126,6 @@ CREATE TABLE "audit_logs" (
     CONSTRAINT "audit_logs_pkey" PRIMARY KEY ("id")
 );
 
--- CreateTable
 CREATE TABLE "pending_confirmations" (
     "id" UUID NOT NULL,
     "user_id" UUID NOT NULL,
@@ -155,69 +138,47 @@ CREATE TABLE "pending_confirmations" (
     CONSTRAINT "pending_confirmations_pkey" PRIMARY KEY ("id")
 );
 
--- CreateIndex
 CREATE UNIQUE INDEX "users_whatsapp_number_key" ON "users"("whatsapp_number");
 
--- CreateIndex
 CREATE INDEX "messages_user_id_received_at_idx" ON "messages"("user_id", "received_at");
 
--- CreateIndex
 CREATE UNIQUE INDEX "messages_user_id_provider_provider_message_id_key" ON "messages"("user_id", "provider", "provider_message_id");
 
--- CreateIndex
 CREATE INDEX "categories_is_system_normalized_name_idx" ON "categories"("is_system", "normalized_name");
 
--- Partial uniques: system categories (user_id IS NULL) vs per-user categories
 CREATE UNIQUE INDEX "categories_system_normalized_name_key" ON "categories" ("normalized_name") WHERE "user_id" IS NULL;
 CREATE UNIQUE INDEX "categories_user_normalized_name_key" ON "categories" ("user_id", "normalized_name") WHERE "user_id" IS NOT NULL;
 
--- CreateIndex
 CREATE INDEX "transactions_user_id_occurred_at_idx" ON "transactions"("user_id", "occurred_at");
 
--- CreateIndex
 CREATE INDEX "transactions_user_id_deleted_at_idx" ON "transactions"("user_id", "deleted_at");
 
--- CreateIndex
 CREATE INDEX "rules_user_id_is_active_priority_idx" ON "rules"("user_id", "is_active", "priority");
 
--- CreateIndex
 CREATE UNIQUE INDEX "recurring_patterns_user_id_fingerprint_key" ON "recurring_patterns"("user_id", "fingerprint");
 
--- CreateIndex
 CREATE INDEX "audit_logs_entity_type_entity_id_idx" ON "audit_logs"("entity_type", "entity_id");
 
--- CreateIndex
 CREATE INDEX "pending_confirmations_user_id_expires_at_idx" ON "pending_confirmations"("user_id", "expires_at");
 
--- AddForeignKey
 ALTER TABLE "messages" ADD CONSTRAINT "messages_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
--- AddForeignKey
 ALTER TABLE "categories" ADD CONSTRAINT "categories_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
--- AddForeignKey
 ALTER TABLE "transactions" ADD CONSTRAINT "transactions_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
--- AddForeignKey
 ALTER TABLE "transactions" ADD CONSTRAINT "transactions_source_message_id_fkey" FOREIGN KEY ("source_message_id") REFERENCES "messages"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
--- AddForeignKey
 ALTER TABLE "transactions" ADD CONSTRAINT "transactions_category_id_fkey" FOREIGN KEY ("category_id") REFERENCES "categories"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
--- AddForeignKey
 ALTER TABLE "rules" ADD CONSTRAINT "rules_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
--- AddForeignKey
 ALTER TABLE "rules" ADD CONSTRAINT "rules_category_id_fkey" FOREIGN KEY ("category_id") REFERENCES "categories"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
--- AddForeignKey
 ALTER TABLE "recurring_patterns" ADD CONSTRAINT "recurring_patterns_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
--- AddForeignKey
 ALTER TABLE "recurring_patterns" ADD CONSTRAINT "recurring_patterns_category_id_fkey" FOREIGN KEY ("category_id") REFERENCES "categories"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
--- AddForeignKey
 ALTER TABLE "audit_logs" ADD CONSTRAINT "audit_logs_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
--- AddForeignKey
 ALTER TABLE "pending_confirmations" ADD CONSTRAINT "pending_confirmations_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;

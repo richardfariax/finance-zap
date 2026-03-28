@@ -5,7 +5,6 @@ export function isAffirmative(text: string): boolean {
   return /^(sim|s|ok|confirmo|isso|certo|beleza|pode|manda|fecha)\b/.test(n);
 }
 
-/** Só encerra pendência com intenção clara de desistir (mensagens curtas). */
 export function isExplicitCancellation(text: string): boolean {
   const n = normalizeForMatch(text).trim();
   if (n.length > 36) return false;
@@ -17,10 +16,6 @@ export function isExplicitCancellation(text: string): boolean {
   return false;
 }
 
-/**
- * Resolve qual categoryId gravar após resposta na pendência LOW_CONFIDENCE_CREATE.
- * Retorna null se a mensagem não for uma confirmação válida.
- */
 export function pickCategoryIdForLowConfidenceConfirm(
   text: string,
   suggestedCategoryId: string | null,

@@ -61,6 +61,42 @@ yarn dev
 - Pasta `baileys_auth/` guarda a sessão do WhatsApp.
 - No terminal, aparece o **QR Code** para parear o número.
 
+## Docker Compose (app + Postgres + áudio + OCR)
+
+Sobe **PostgreSQL**, a **API** e deixa pronto:
+
+- **ffmpeg** (conversão de áudio para WAV 16 kHz)
+- **whisper.cpp** compilado na imagem + modelo **ggml-base.bin** (troque com build-arg `WHISPER_MODEL_FILE`)
+- **Tesseract** (`por` + `eng`) para OCR no sistema; o código usa também **tesseract.js**
+- **Migrações** (`prisma migrate deploy`) e **seed** de categorias na subida
+- Volumes nomeados para **sessão Baileys** e **mídia** (não perdem ao recriar o container)
+
+**Requisito:** Docker + Docker Compose v2.
+
+```bash
+docker compose up --build
+```
+
+Ou: `yarn docker:up` (mesmo efeito). Em segundo plano: `yarn docker:up:detached`. Logs do app: `yarn docker:logs`.
+
+- API: `http://localhost:3000` (porta alterável com `PORT` no host, ex.: `PORT=8080 docker compose up`).
+- Postgres exposto em `localhost:5432` (usuário `finance`, senha `finance`, DB `finance_zap`).
+- O **QR Code** do WhatsApp aparece no terminal — use `tty: true` já definido no compose.
+
+Variáveis úteis (arquivo `.env` na raiz do projeto ou ambiente do shell): `PORT`, `LOG_LEVEL`, `DEFAULT_TIMEZONE`, `WHISPER_LANG`, `WHISPER_PROMPT`, `RUN_SEED` (`false` para pular o seed após a primeira vez), `WHISPER_MODEL_FILE` (só no **build**, ex.: `ggml-small.bin`).
+
+**Só o banco** (desenvolvimento local com `yarn dev`): `docker compose up postgres -d`.
+
+**Nota:** a primeira build compila o whisper.cpp e pode levar vários minutos. Imagem final fica maior por causa do modelo GGML. Em **Mac Apple Silicon** o serviço `app` usa `platform: linux/amd64` para a compilação do whisper ser estável (pode ser mais lento na primeira build por emulação).
+
+## Mensagens automáticas (WhatsApp)
+
+- **Primeira mensagem** da pessoa: boas-vindas com o *primeiro nome* (push name) + texto curto pedindo *doação opcional* no PIX (`DONATION_PIX_KEY` no `.env`, padrão no código).
+- **Todo dia, entre 00:00 e 00:44 no fuso do usuário** (`users.timezone`): resumo automático do **dia anterior** (despesas, receitas, saldo, top categorias + dica rápida).
+- **Mais de 24h sem mensagem:** um lembrete amigável para **fixar a conversa** (não repete até a pessoa voltar a falar e ficar ausente de novo).
+
+Exige migração: `yarn prisma:migrate:deploy` (novos campos em `users`).
+
 ## Autenticação Baileys
 
 1. Rode `yarn dev`.

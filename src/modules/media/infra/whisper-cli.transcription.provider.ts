@@ -1,4 +1,4 @@
-import { readFile, unlink } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -8,12 +8,9 @@ import type {
   TranscriptionProvider,
   TranscriptionResult,
 } from '../domain/transcription-provider.js';
+import { unlinkIgnoreMissing } from '../../../shared/utils/unlink-ignore-missing.js';
 import { FfmpegAudioConverter } from './ffmpeg-audio.converter.js';
 
-/**
- * Chama o binário `whisper-cli` do whisper.cpp (`-m`, `-f`, `-otxt`, `-of`).
- * Configure `WHISPER_CLI_PATH` e `WHISPER_MODEL_PATH`. Ver README.
- */
 export class WhisperCliTranscriptionProvider implements TranscriptionProvider {
   constructor(private readonly ffmpeg: FfmpegAudioConverter = new FfmpegAudioConverter()) {}
 
@@ -34,7 +31,11 @@ export class WhisperCliTranscriptionProvider implements TranscriptionProvider {
     try {
       await this.runWhisper(cli, model, wavPath, outPrefix, env.WHISPER_LANG);
     } catch {
-      await unlink(wavPath).catch(() => undefined);
+      try {
+        await unlinkIgnoreMissing(wavPath);
+      } catch (cleanupErr: unknown) {
+        console.error('[whisper] cleanup wav após falha', cleanupErr);
+      }
       return { text: '', confidence: ConfidenceLevel.LOW, language: env.WHISPER_LANG };
     }
 
@@ -45,8 +46,13 @@ export class WhisperCliTranscriptionProvider implements TranscriptionProvider {
     } catch {
       text = '';
     } finally {
-      await unlink(txtPath).catch(() => undefined);
-      await unlink(wavPath).catch(() => undefined);
+      for (const p of [txtPath, wavPath]) {
+        try {
+          await unlinkIgnoreMissing(p);
+        } catch (cleanupErr: unknown) {
+          console.error('[whisper] cleanup temp', cleanupErr);
+        }
+      }
     }
 
     const confidence =

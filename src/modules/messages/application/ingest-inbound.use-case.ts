@@ -13,7 +13,9 @@ import { env } from '../../../config/env.js';
 import type { NormalizedIngestMessage } from '../../../shared/domain/ingest-message.js';
 import { accountKeyFromWaChatJid } from '../../../shared/utils/whatsapp-jid.js';
 import { UserIntent, ParseStatus, type UserIntentType } from '../../../shared/types/intent.js';
+import { unlinkIgnoreMissing } from '../../../shared/utils/unlink-ignore-missing.js';
 import { normalizeForMatch } from '../../../shared/utils/normalize-text.js';
+import { matchesResetUserDataCommand } from '../../../shared/utils/reset-user-data-command.js';
 import { isMoneyOnlySegment } from '../../../shared/utils/split-financial-segments.js';
 import { normalizeVoiceNoteText } from '../../../shared/utils/voice-transcript-normalize.js';
 import type { AuditService } from '../../audit/application/audit.service.js';
@@ -62,9 +64,12 @@ import {
   extendLowConfidenceClarification,
   replyExpenseRegistered,
   replyHelp,
+  replyAccountDataWiped,
+  firstNameFromPush,
   replyIncomeRegistered,
   replyIntro,
   replyLatestTransactions,
+  replyOnboardingWelcome,
   replyMoneyOnlyNotLancamento,
   replyMonthLedger,
   replyNoTextInMessage,
@@ -78,6 +83,7 @@ import {
   replyTransferRegistered,
 } from '../../whatsapp/presentation/bot-replies.js';
 import type { EnsureUserUseCase } from '../../users/application/ensure-user.use-case.js';
+import type { UserRepository } from '../../users/infra/user.repository.js';
 import type { MessageRepository } from '../infra/message.repository.js';
 import {
   isAffirmative,
@@ -143,7 +149,6 @@ function isQueryIntentThatAbandonsPending(intent: UserIntentType): boolean {
   }
 }
 
-/** Pergunta tipo "quais categorias tem?" durante confirmação de categoria. */
 function isListCategoriesQuery(text: string): boolean {
   const n = normalizeForMatch(text);
   if (!/\bcategorias?\b/.test(n)) return false;
@@ -173,6 +178,7 @@ export class IngestInboundUseCase {
 
   constructor(
     private readonly ensureUser: EnsureUserUseCase,
+    private readonly users: UserRepository,
     private readonly messages: MessageRepository,
     private readonly transactions: TransactionRepository,
     private readonly categories: CategoryRepository,
@@ -194,6 +200,8 @@ export class IngestInboundUseCase {
     const replyJid = event.waChatJid;
     const user = await this.ensureUser.execute({
       whatsappNumber: accountKey,
+      displayName: event.pushName ?? undefined,
+      waChatJid: event.waChatJid,
       timezone: env.DEFAULT_TIMEZONE,
       locale: env.DEFAULT_LOCALE,
     });
@@ -204,6 +212,9 @@ export class IngestInboundUseCase {
       event.providerMessageId,
     );
     if (existing) return;
+
+    const inboundCountBefore = await this.messages.countInboundForUser(user.id);
+    const isFirstInbound = inboundCountBefore === 0;
 
     const rawText = event.rawText;
     let processedText = rawText;
@@ -225,6 +236,19 @@ export class IngestInboundUseCase {
       metadata: {},
       receivedAt: event.receivedAt,
     });
+
+    await this.users.recordInboundActivity(user.id, replyJid, event.receivedAt);
+
+    const quickPlainText = (rawText ?? '').replace(/\s+/g, ' ').trim();
+    const quickSegs = prepareTransactionInboundSegments(quickPlainText);
+    const skipWelcomeForReset =
+      quickSegs.length === 1 && matchesResetUserDataCommand(quickSegs[0] ?? '');
+
+    if (user.onboardingWelcomeSentAt == null && isFirstInbound && !skipWelcomeForReset) {
+      const who = firstNameFromPush(user.displayName ?? event.pushName);
+      await this.safeSend(replyJid, replyOnboardingWelcome(who, env.DONATION_PIX_KEY));
+      await this.users.markOnboardingWelcomeSent(user.id, new Date());
+    }
 
     if (
       media &&
@@ -282,6 +306,23 @@ export class IngestInboundUseCase {
       return;
     }
 
+    const resetSegments = prepareTransactionInboundSegments(textForPipeline);
+    if (resetSegments.length === 1 && matchesResetUserDataCommand(resetSegments[0] ?? '')) {
+      const paths = await this.messages.listMediaPathsForUser(user.id);
+      for (const p of paths) {
+        try {
+          await unlinkIgnoreMissing(p);
+        } catch (err: unknown) {
+          if (this.log)
+            this.log.warn({ err, path: p }, 'Falha ao apagar arquivo de mídia no reset');
+          else console.error('[ingest] mídia no reset', err);
+        }
+      }
+      await this.users.wipeClientData(user.id);
+      await this.safeSend(replyJid, replyAccountDataWiped());
+      return;
+    }
+
     if (event.messageType === MessageType.AUDIO) {
       await this.pending.deleteForUser(user.id);
       await this.pending.create({
@@ -318,10 +359,6 @@ export class IngestInboundUseCase {
     );
   }
 
-  /**
-   * Processa texto após pendências resolvidas: vários lançamentos separados por vírgula
-   * ou um único comando / parse.
-   */
   private async processInboundTextAfterPending(
     userId: string,
     messageId: string,

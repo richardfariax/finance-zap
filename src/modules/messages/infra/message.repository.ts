@@ -1,9 +1,9 @@
 import type { Message, Prisma } from '@prisma/client';
-import type {
-  ConfidenceLevel,
+import {
   MessageDirection,
-  MessageProvider,
-  MessageType,
+  type ConfidenceLevel,
+  type MessageProvider,
+  type MessageType,
 } from '../../../shared/types/prisma-enums.js';
 import { prisma } from '../../../shared/infra/prisma.js';
 
@@ -47,6 +47,29 @@ export class MessageRepository {
   async getById(id: string): Promise<Message | null> {
     return prisma.message.findUnique({ where: { id } });
   }
+
+  async countInboundForUser(userId: string): Promise<number> {
+    return prisma.message.count({
+      where: {
+        userId,
+        direction: MessageDirection.INBOUND,
+      },
+    });
+  }
+
+  async listMediaPathsForUser(userId: string): Promise<string[]> {
+    const rows = await prisma.message.findMany({
+      where: {
+        userId,
+        mediaPath: { not: null },
+      },
+      select: { mediaPath: true },
+    });
+    return rows
+      .map((r) => r.mediaPath)
+      .filter((p): p is string => typeof p === 'string' && p.trim().length > 0);
+  }
 }
 
-export type { MessageDirection, MessageProvider, MessageType };
+export type { MessageProvider, MessageType };
+export type { MessageDirection } from '../../../shared/types/prisma-enums.js';

@@ -1,7 +1,3 @@
-/**
- * Divide uma mensagem em vários trechos por vírgula.
- * Vírgulas dentro de valores em PT-BR (ex.: 23,50 ou 1.234,56) são preservadas.
- */
 const MONEY_TOKEN =
   /(?:R\$\s*)?\d{1,3}(?:\.\d{3})*,\d{2}\b|\b\d{1,3}(?:\.\d{3})*,\d{2}\b|\b\d+,\d{2}\b/giu;
 
@@ -32,7 +28,6 @@ export function splitFinancialSegments(text: string): string[] {
   return restored.map((p) => p.trim()).filter((p) => p.length > 0);
 }
 
-/** Trecho que é só valor monetário (ou inteiro), sem descrição de lançamento. */
 export function isMoneyOnlySegment(text: string): boolean {
   const t = text.replace(/\s+/g, ' ').trim();
   if (!t) return false;

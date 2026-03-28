@@ -155,7 +155,6 @@ function inferTransactionType(normalized: string): TransactionType | null {
   return null;
 }
 
-/** Valor monetário logo após recebi|ganhei|paguei (PT-BR). */
 const INLINE_AMOUNT_PATTERN =
   '(?:r\\$\\s*)?(?:[\\d]{1,3}(?:\\.[\\d]{3})*(?:,\\d{2})?|\\d+(?:,\\d{2})?)\\s*(?:reais?|real)?';
 
@@ -266,9 +265,6 @@ function extractNaturalDescription(raw: string, transactionType: TransactionType
   return null;
 }
 
-/**
- * Saudação curta (sem números / valor) — responde com apresentação amigável.
- */
 function isGreetingOnly(normalized: string): boolean {
   const t = normalized.replace(/\s+/g, ' ').trim();
   if (t.length > 64) return false;
@@ -542,10 +538,6 @@ export class FinancialParserService {
     }
 
     const trustNaturalStructure = naturalDesc !== null;
-    /**
-     * Transcrição de áudio costuma vir com sourceConfidence baixo; se a categoria veio forte
-     * (palavra-chave, regra), não rebaixar tudo para pedir confirmação desnecessária.
-     */
     if (
       ctx.sourceConfidence &&
       !trustNaturalStructure &&

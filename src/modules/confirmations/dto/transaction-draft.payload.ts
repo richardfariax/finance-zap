@@ -10,7 +10,6 @@ export const TransactionDraftPayloadSchema = z.object({
   suggestedCategoryId: z.string().uuid().nullable(),
   merchant: z.string().optional(),
   transactionType: z.nativeEnum(TransactionType).optional(),
-  /** Texto bruto que abriu a pendência (para detectar repetição sem cancelar). */
   originalUserText: z.string().max(4000).optional(),
 });
 

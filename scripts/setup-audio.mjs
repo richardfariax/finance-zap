@@ -1,12 +1,4 @@
 #!/usr/bin/env node
-/**
- * Baixa modelo GGML, obtém whisper-cli (build ou ZIP no Windows) e,
- * no macOS sem ffmpeg no PATH, baixa binário estático para vendor/ffmpeg.
- * Atualiza WHISPER_*, FFMPEG_PATH no .env do projeto.
- *
- * Uso: yarn setup:audio
- * Opcional: FZ_WHISPER_MODEL=ggml-small.bin yarn setup:audio
- */
 
 import {
   chmodSync,

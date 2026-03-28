@@ -36,7 +36,6 @@ export class ReportsService {
     private readonly categories: CategoryRepository,
   ) {}
 
-  /** monthOffset: 0 = mês do `reference` no fuso do usuário; 1 = mês anterior */
   private zonedMonthRange(
     reference: Date,
     timeZone: string,

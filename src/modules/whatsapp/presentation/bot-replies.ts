@@ -41,7 +41,6 @@ export function replyParserUnknownWithExamples(): string {
   ].join('\n');
 }
 
-/** Parece ajuste do último lançamento, não um registro novo. */
 export function replyParserCorrectionNotLancamento(): string {
   return [
     '✏️ *Parece correção, não um lançamento novo*',
@@ -54,7 +53,6 @@ export function replyParserCorrectionNotLancamento(): string {
   ].join('\n');
 }
 
-/** Trecho só com número, sem descrição (ex.: vírgula que partiu a frase). */
 export function replyMoneyOnlyNotLancamento(): string {
   return [
     '💡 *Só apareceu um valor*',
@@ -65,7 +63,6 @@ export function replyMoneyOnlyNotLancamento(): string {
   ].join('\n');
 }
 
-/** Inclui "despesa, receita ou transferência" para o ingest reconhecer a pendência. */
 export function replyParserAskTransactionKind(): string {
   return [
     '❓ *Qual tipo de movimentação?*',
@@ -129,12 +126,9 @@ export function replyReportScopeUnclear(): string {
 
 export function replyExpenseRegistered(amount: Decimal, place: string, category: string): string {
   return [
-    '✅ *Registrado*',
-    '',
-    `${formatMoney(amount)} · ${place}`,
+    `✅ ${formatMoney(amount)} · ${place}`,
     `🏷️ ${category}`,
-    '',
-    '_Quer mudar a categoria? É só avisar._',
+    '_Categoria errada? É só avisar._',
   ].join('\n');
 }
 
@@ -146,7 +140,6 @@ export function replyTransferRegistered(amount: Decimal, label: string): string 
   return ['✅ *Transferência anotada*', '', formatMoney(amount), `↔️ ${label}`].join('\n');
 }
 
-/** @deprecated Prefer replyMonthLedger; mantido para compat. */
 export function replyMonthlySummary(s: MonthlySummary): string {
   return `No mês de *${s.monthLabel}*: receitas ${formatMoney(s.income)}, despesas ${formatMoney(s.expense)}, saldo ${formatMoney(s.balance)}.`;
 }
@@ -298,17 +291,12 @@ export function replyRecurring(
 
 export function replyIntro(): string {
   return [
-    '👋 *Finance Zap*',
+    '👋 *Finance Zap* — finanças sem planilha ✨',
     '',
-    'Anoto suas finanças por aqui — sem planilha.',
+    '✏️ *uber 23,50* · *gastei 40 no mercado* · *recebi 50 de fulano*',
+    '🔗 *uber 10, padaria 15*',
     '',
-    '✏️ *Exemplos*',
-    '• *uber 23,50*',
-    '• *gastei 40 no mercado*',
-    '• *recebi 50 de fulano*',
-    '• *vários:* uber 10, padaria 15',
-    '',
-    '📊 *Resumo* · 📘 *ajuda*',
+    '📊 *resumo* · 📘 *ajuda*',
   ].join('\n');
 }
 
@@ -344,10 +332,27 @@ export function replyHelp(): string {
     '• *corrige o último, 59,90* — vírgula não vira lançamento novo',
     '• muda a categoria do último para alimentação',
     '',
+    '🗑️ *Apagar tudo (recomeçar)*',
+    '• *apagar todos os dados* ou *apagar tudo*',
+    '• *apagar meus dados*, *resetar minha conta*, *limpar minha conta*',
+    'Apaga lançamentos, suas categorias, regras e histórico. Na *próxima* mensagem mando a saudação de novo.',
+    '_Não dá para desfazer._',
+    '',
     '🎤 *Áudio / foto*',
     'Áudio: transcrevo e peço *sim* antes de salvar.',
     '',
     '💬 Dúvida? Reformule ou diga *ajuda*.',
+  ].join('\n');
+}
+
+export function replyAccountDataWiped(): string {
+  return [
+    '🗑️ *Seus dados foram apagados*',
+    '',
+    'Removi lançamentos, categorias suas, regras, recorrências, histórico de mensagens e pendências.',
+    'Na *próxima mensagem* você recebe a saudação como se fosse a primeira vez.',
+    '',
+    '_Isso não pode ser desfeito._',
   ].join('\n');
 }
 
@@ -509,4 +514,80 @@ export function replyLastTxCategoryUpdateFail(): string {
 
 export function replyLastTxCategoryUpdated(categoryName: string): string {
   return ['✅ *Categoria atualizada*', '', `*${categoryName}*`].join('\n');
+}
+
+export function firstNameFromPush(pushName: string | null | undefined): string {
+  const t = (pushName ?? '').trim();
+  if (!t) return 'amigo';
+  const w = (t.split(/\s+/)[0] ?? t).trim();
+  const clean = w.replace(/[^\p{L}\p{N}]/gu, '');
+  if (!clean) return 'amigo';
+  return titleCasePt(clean.toLowerCase());
+}
+
+export function replyOnboardingWelcome(displayName: string, pixKey: string): string {
+  return [
+    `Olá, *${displayName}*! 👋✨`,
+    '',
+    'Sou o *Finance Zap* — anoto seus gastos e receitas aqui.',
+    '',
+    '💝 Tudo *grátis*. Se quiser ajudar o projeto, *qualquer valor* no PIX:',
+    `🔑 \`${pixKey}\``,
+    '',
+    '_Manda um lançamento quando quiser._ 📲',
+  ].join('\n');
+}
+
+export function replyAutomatedDaySummary(
+  day: DailySummary,
+  topCategories: CategoryBreakdownRow[],
+  didacticLine: string,
+): string {
+  const wd = titleCasePt(day.weekdayLabel);
+  if (day.income.isZero() && day.expense.isZero()) {
+    return [`🌙 *Ontem* (${wd}) — sem registros.`, '', `💡 ${didacticLine}`].join('\n');
+  }
+  const lines: string[] = [
+    `🌙 *Resumo de ontem* · ${wd}`,
+    '',
+    `💸 Despesas *${formatMoney(day.expense)}*`,
+    `💵 Receitas *${formatMoney(day.income)}*`,
+    `⚖️ Saldo *${formatMoney(day.balance)}*`,
+  ];
+  const top = topCategories.filter((r) => r.total.gt(0)).slice(0, 3);
+  if (top.length > 0) {
+    lines.push('', '📂 *Onde mais saiu*');
+    top.forEach((r, i) => {
+      lines.push(`${String(i + 1)}. ${r.categoryName} · ${formatMoney(r.total)}`);
+    });
+  }
+  lines.push('', `💡 ${didacticLine}`);
+  return lines.join('\n');
+}
+
+export function replyPinConversationNudge(): string {
+  return [
+    '👋 *Oi! Faz um tempinho sem mensagens por aqui.*',
+    '',
+    '📌 *Fixe este chat* no WhatsApp — fica fácil de achar e você não perde o resumo da madrugada 🌙',
+    '',
+    '📱 *Android:* ⋮ no topo → *Fixar conversa*',
+    '🍎 *iPhone:* deslize o chat → *Fixar*',
+    '',
+    '_Um “uber 15” ou áudio já atualiza tudo._ ✨',
+  ].join('\n');
+}
+
+export const DIDACTIC_TIPS_POOL = [
+  'Vários gastos numa vez: *uber 10, mercado 40* (vírgula entre eles).',
+  'Dúvida? Manda *ajuda*.',
+  'Errou o valor? *corrige o último para 50*',
+  'Visão do mês: diga *resumo*.',
+  'Áudio também vale — eu transcrevo e peço *sim* pra salvar.',
+] as const;
+
+export function pickDidacticTip(seed: number): string {
+  const pool = DIDACTIC_TIPS_POOL;
+  const i = Math.abs(seed) % pool.length;
+  return pool[i] ?? pool[0];
 }

@@ -1,0 +1,16 @@
+node_modules
+dist
+.git
+.github
+*.md
+.env
+!.env.example
+baileys_auth
+storage
+vendor
+coverage
+.vscode
+.idea
+terminals
+*.log
+.DS_Store

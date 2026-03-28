@@ -19,6 +19,16 @@ import type { NormalizedIngestMessage } from '../../../shared/domain/ingest-mess
 import type { IngestInboundUseCase } from '../../messages/application/ingest-inbound.use-case.js';
 import type { OutboundMessagesPort } from '../ports/outbound-messages.port.js';
 
+function bufferFromMediaPayload(data: unknown): Buffer | null {
+  if (data == null) return null;
+  if (Buffer.isBuffer(data)) return data;
+  if (data instanceof ArrayBuffer) return Buffer.from(data);
+  if (ArrayBuffer.isView(data)) {
+    return Buffer.from(data.buffer, data.byteOffset, data.byteLength);
+  }
+  return null;
+}
+
 function mapMessageType(
   mimetype: string | undefined,
   contentType: string | undefined,
@@ -33,7 +43,14 @@ function mapMessageType(
 }
 
 export class BaileysOutboundAdapter implements OutboundMessagesPort {
-  constructor(private readonly getSocket: () => WASocket | null) {}
+  constructor(
+    private readonly getSocket: () => WASocket | null,
+    private readonly isSessionReady: () => boolean,
+  ) {}
+
+  canSend(): boolean {
+    return this.isSessionReady();
+  }
 
   async sendText(toJid: string, text: string): Promise<void> {
     const sock = this.getSocket();
@@ -46,6 +63,7 @@ export class BaileysOutboundAdapter implements OutboundMessagesPort {
 
 export class BaileysService {
   private sock: WASocket | null = null;
+  private waSessionOpen = false;
   private readonly logger: Logger;
 
   constructor(
@@ -56,15 +74,25 @@ export class BaileysService {
   }
 
   getOutbound(): OutboundMessagesPort {
-    return new BaileysOutboundAdapter(() => this.sock);
+    return new BaileysOutboundAdapter(() => this.sock, () => this.isSendReady());
   }
 
   getSocket(): WASocket | null {
     return this.sock;
   }
 
+  isSendReady(): boolean {
+    return this.sock !== null && this.waSessionOpen;
+  }
+
   async sendText(toJid: string, text: string): Promise<void> {
-    await new BaileysOutboundAdapter(() => this.sock).sendText(toJid, text);
+    if (!this.isSendReady()) {
+      throw new Error('WhatsApp não conectado');
+    }
+    await new BaileysOutboundAdapter(() => this.sock, () => this.isSendReady()).sendText(
+      toJid,
+      text,
+    );
   }
 
   async start(): Promise<void> {
@@ -96,6 +124,7 @@ export class BaileysService {
         qrcode.generate(qr, { small: true });
       }
       if (connection === 'close') {
+        this.waSessionOpen = false;
         const err = lastDisconnect?.error as { output?: { statusCode?: number } } | undefined;
         const shouldReconnect = err?.output?.statusCode !== DisconnectReason.loggedOut;
         this.logger.warn({ shouldReconnect }, 'Conexão WhatsApp encerrada');
@@ -103,6 +132,7 @@ export class BaileysService {
           void this.start();
         }
       } else if (connection === 'open') {
+        this.waSessionOpen = true;
         this.logger.info('WhatsApp conectado');
       }
     });
@@ -146,12 +176,18 @@ export class BaileysService {
           ? msg.messageTimestamp
           : Math.floor(Date.now() / 1000);
 
+      const pushName =
+        typeof (msg as { pushName?: string }).pushName === 'string'
+          ? (msg as { pushName: string }).pushName
+          : undefined;
+
       const normalized: NormalizedIngestMessage = {
         provider: MessageProvider.WHATSAPP,
         providerMessageId,
         direction: 'INBOUND',
         messageType: mapMessageType(mime, contentType),
         waChatJid: remote,
+        pushName,
         rawText: textBody,
         receivedAt: new Date(tsSec * 1000),
         mediaMimeType: mime,
@@ -174,7 +210,7 @@ export class BaileysService {
             suggestedExtension: ext,
             download: async () => {
               try {
-                const buf = await downloadMediaMessage(
+                const raw = await downloadMediaMessage(
                   msg,
                   'buffer',
                   {},
@@ -183,7 +219,12 @@ export class BaileysService {
                     reuploadRequest: sock.updateMediaMessage,
                   },
                 );
-                return Buffer.isBuffer(buf) ? buf : Buffer.from(buf as ArrayBuffer);
+                const buf = bufferFromMediaPayload(raw);
+                if (!buf) {
+                  this.logger.warn({ hint: typeof raw }, 'Formato inesperado ao baixar mídia');
+                  return null;
+                }
+                return buf;
               } catch (e) {
                 this.logger.error({ err: e }, 'Falha ao baixar mídia');
                 return null;

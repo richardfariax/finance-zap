@@ -10,6 +10,7 @@ import { WhisperCliTranscriptionProvider } from '../../modules/media/infra/whisp
 const simulateTextBody = z.object({
   whatsappNumber: z.string().min(8),
   text: z.string().min(1),
+  pushName: z.string().max(120).optional(),
 });
 
 export function registerDevRoutes(app: FastifyInstance, wiring: AppWiring): void {
@@ -33,6 +34,7 @@ export function registerDevRoutes(app: FastifyInstance, wiring: AppWiring): void
       direction: MessageDirection.INBOUND,
       messageType: MessageType.TEXT,
       waChatJid: waChatJidFromDigits(digits),
+      pushName: body.data.pushName,
       rawText: body.data.text,
       receivedAt: new Date(),
     });

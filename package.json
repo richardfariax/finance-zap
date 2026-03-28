@@ -4,6 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "prepare": "husky",
+    "ci:check": "node scripts/ci-check.mjs",
     "dev": "tsx watch src/app/server.ts",
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/app/server.js",
@@ -14,15 +16,20 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
+    "typecheck:all": "tsc --noEmit -p tsconfig.eslint.json",
     "setup:env": "node scripts/ensure-env.mjs",
     "setup:audio": "node scripts/ensure-env.mjs && node scripts/setup-audio.mjs",
     "prisma:generate": "node scripts/ensure-env.mjs && dotenv -e .env -- prisma generate",
     "prisma:migrate": "node scripts/ensure-env.mjs && dotenv -e .env -- prisma migrate dev",
     "prisma:migrate:deploy": "node scripts/ensure-env.mjs && dotenv -e .env -- prisma migrate deploy",
     "prisma:seed": "node scripts/ensure-env.mjs && dotenv -e .env -- prisma db seed",
-    "db:up": "docker compose up -d",
+    "db:up": "docker compose up -d postgres",
     "db:ready": "node scripts/wait-for-postgres.mjs",
-    "bootstrap": "yarn setup:env && yarn db:up && yarn db:ready && yarn prisma:generate && yarn prisma:migrate:deploy && yarn prisma:seed"
+    "bootstrap": "yarn setup:env && yarn db:up && yarn db:ready && yarn prisma:generate && yarn prisma:migrate:deploy && yarn prisma:seed",
+    "docker:up": "docker compose up --build",
+    "docker:up:detached": "docker compose up --build -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f app"
   },
   "engines": {
     "node": ">=20"
@@ -51,6 +58,7 @@
     "@types/qrcode-terminal": "^0.12.2",
     "dotenv-cli": "^11.0.0",
     "eslint": "^9.21.0",
+    "husky": "^9.1.7",
     "prettier": "^3.5.3",
     "prisma": "^6.5.0",
     "tsx": "^4.19.3",

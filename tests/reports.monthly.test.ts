@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import { describe, expect, it, vi } from 'vitest';
 import { ReportsService } from '../src/modules/reports/application/reports.service.js';
 import type { TransactionRepository } from '../src/modules/transactions/infra/transaction.repository.js';
@@ -8,8 +9,8 @@ describe('ReportsService', () => {
   it('calcula saldo do mês a partir do aggregate', async () => {
     const transactions = {
       aggregateMonth: vi.fn(async () => [
-        { type: TransactionType.INCOME, _sum: { amount: { toString: () => '3000' } } },
-        { type: TransactionType.EXPENSE, _sum: { amount: { toString: () => '1200' } } },
+        { type: TransactionType.INCOME, _sum: { amount: new Prisma.Decimal('3000') } },
+        { type: TransactionType.EXPENSE, _sum: { amount: new Prisma.Decimal('1200') } },
       ]),
       groupByCategoryMonth: vi.fn(async () => []),
       topExpenses: vi.fn(async () => []),
