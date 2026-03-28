@@ -1,5 +1,5 @@
-import type { Category, Rule, TransactionType } from '@prisma/client';
-import { ConfidenceLevel } from '@prisma/client';
+import type { Category, Rule } from '@prisma/client';
+import { ConfidenceLevel, type TransactionType } from '../../../shared/types/prisma-enums.js';
 import { Decimal } from 'decimal.js';
 import { addDays } from 'date-fns';
 import { toZonedTime, fromZonedTime } from 'date-fns-tz';
@@ -7,6 +7,7 @@ import { UserIntent, ParseStatus, type UserIntentType } from '../../../shared/ty
 import { normalizeDescription, normalizeForMatch } from '../../../shared/utils/normalize-text.js';
 import {
   replyParserAskTransactionKind,
+  replyParserCorrectionNotLancamento,
   replyParserNeedValueOnly,
   replyParserSuggestCategoryName,
   replyParserUnknownWithExamples,
@@ -65,7 +66,6 @@ function extractMoney(text: string): { value: Decimal; raw: string } | null {
     re.lastIndex = 0;
     let m: RegExpExecArray | null;
     while ((m = re.exec(cleaned)) !== null) {
-      // Grupos de captura variam entre os padrões; `1` pode estar vazio.
       const raw: string = m[1] ? m[1] : m[0];
       const normalized = raw.replace(/\./g, '').replace(',', '.');
       if (!/^\d+(\.\d+)?$/.test(normalized)) continue;
@@ -116,6 +116,17 @@ function parseOccurrenceDate(normalized: string, now: Date, timeZone: string): D
   }
 
   return null;
+}
+
+function looksLikeBareCorrectionLanguage(normalized: string): boolean {
+  if (
+    /\b(gastei|paguei|recebi|comprei|transferi|anotei|gasto|pix\s+de|pix\s+no)\b/.test(normalized)
+  ) {
+    return false;
+  }
+  return /\b(corrige|corrigir|conserta|consertar|mudar|muda|alterar|altera|atualizar|atualiza|lancamento|lançamento|na verdade|desconsidera)\b/.test(
+    normalized,
+  );
 }
 
 function inferTransactionType(normalized: string): TransactionType | null {
@@ -190,7 +201,7 @@ function extractNaturalDescription(raw: string, transactionType: TransactionType
     );
     const mp = personRe.exec(t);
     if (mp) {
-      return `Recebido da ${toReadableFragment(mp[1])}`;
+      return `Recebido de: ${toReadableFragment(mp[1])}`;
     }
     const genRe = new RegExp(`^\\s*(?:recebi|ganhei)\\s+${amt}\\s*de\\s+(.+?)\\s*$`, 'iu');
     const mg = genRe.exec(t);
@@ -470,6 +481,19 @@ export class FinancialParserService {
           sourceConfidence: ctx.sourceConfidence,
         };
       }
+      if (looksLikeBareCorrectionLanguage(normalized)) {
+        return {
+          intent: UserIntent.UNKNOWN,
+          status: ParseStatus.FAILED,
+          currency: 'BRL',
+          occurredAt,
+          description: raw,
+          normalizedDescription: normalizeDescription(raw),
+          confidence: ConfidenceLevel.LOW,
+          clarification: replyParserCorrectionNotLancamento(),
+          sourceConfidence: ctx.sourceConfidence,
+        };
+      }
       transactionType = 'EXPENSE';
     }
 
@@ -490,7 +514,7 @@ export class FinancialParserService {
 
     const outros = findCategoryByCanonicalName(ctx.categories, 'Outros');
     if (transactionType === 'INCOME' && naturalDesc) {
-      if (/^recebido da\b/i.test(naturalDesc)) {
+      if (/^recebido de\b/i.test(naturalDesc)) {
         suggested = { category: outros, confidence: ConfidenceLevel.HIGH };
       } else if (/^recebido:/i.test(naturalDesc)) {
         const frag = naturalDesc.replace(/^recebido:\s*/i, '').trim();

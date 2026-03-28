@@ -35,9 +35,7 @@ export function pickCategoryIdForLowConfidenceConfirm(
     const cat = cats.find((c) => c.id === suggestedCategoryId);
     if (
       cat &&
-      (n === cat.normalizedName ||
-        n.includes(cat.normalizedName) ||
-        cat.normalizedName.includes(n))
+      (n === cat.normalizedName || n.includes(cat.normalizedName) || cat.normalizedName.includes(n))
     ) {
       return suggestedCategoryId;
     }

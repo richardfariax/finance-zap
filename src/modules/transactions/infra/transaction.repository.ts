@@ -1,11 +1,9 @@
+import type { Category, Prisma, Transaction } from '@prisma/client';
 import type {
-  Category,
   ConfidenceLevel,
-  Prisma,
-  Transaction,
   TransactionStatus,
   TransactionType,
-} from '@prisma/client';
+} from '../../../shared/types/prisma-enums.js';
 import { prisma } from '../../../shared/infra/prisma.js';
 import type { Decimal } from 'decimal.js';
 

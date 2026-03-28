@@ -1,11 +1,10 @@
-import {
-  type ConfidenceLevel,
-  type Message,
-  type MessageDirection,
-  type MessageProvider,
-  type MessageType,
-  type Prisma,
-} from '@prisma/client';
+import type { Message, Prisma } from '@prisma/client';
+import type {
+  ConfidenceLevel,
+  MessageDirection,
+  MessageProvider,
+  MessageType,
+} from '../../../shared/types/prisma-enums.js';
 import { prisma } from '../../../shared/infra/prisma.js';
 
 export class MessageRepository {

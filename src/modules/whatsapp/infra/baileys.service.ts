@@ -9,7 +9,7 @@ import {
   type WAMessage,
   type WASocket,
 } from '@whiskeysockets/baileys';
-import { MessageProvider, MessageType } from '@prisma/client';
+import { MessageProvider, MessageType } from '../../../shared/types/prisma-enums.js';
 import { mkdir } from 'node:fs/promises';
 import type { Logger } from 'pino';
 import pino from 'pino';

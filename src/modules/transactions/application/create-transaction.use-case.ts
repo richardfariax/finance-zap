@@ -1,5 +1,8 @@
-import type { ConfidenceLevel, TransactionType } from '@prisma/client';
-import { TransactionStatus } from '@prisma/client';
+import {
+  type ConfidenceLevel,
+  TransactionStatus,
+  type TransactionType,
+} from '../../../shared/types/prisma-enums.js';
 import type { Decimal } from 'decimal.js';
 import type { AuditService } from '../../audit/application/audit.service.js';
 import type { RecurrenceDetectorService } from '../../recurrence/application/recurrence-detector.service.js';

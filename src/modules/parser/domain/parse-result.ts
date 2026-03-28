@@ -1,4 +1,4 @@
-import type { ConfidenceLevel, TransactionType } from '@prisma/client';
+import type { ConfidenceLevel, TransactionType } from '../../../shared/types/prisma-enums.js';
 import type { Decimal } from 'decimal.js';
 import type { ParseStatusType, UserIntentType } from '../../../shared/types/intent.js';
 

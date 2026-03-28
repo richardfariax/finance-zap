@@ -1,5 +1,4 @@
-import type { MessageType } from '@prisma/client';
-import type { MessageProvider } from '@prisma/client';
+import type { MessageType, MessageProvider } from '../types/prisma-enums.js';
 
 export type IngestDirection = 'INBOUND' | 'OUTBOUND';
 

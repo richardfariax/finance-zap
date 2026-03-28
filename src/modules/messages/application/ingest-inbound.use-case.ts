@@ -1,11 +1,11 @@
+import type { Category } from '@prisma/client';
 import {
   ConfidenceLevel,
-  type Category,
   MessageDirection,
   MessageProvider,
   MessageType,
   TransactionType,
-} from '@prisma/client';
+} from '../../../shared/types/prisma-enums.js';
 import { Decimal } from 'decimal.js';
 import { addHours } from 'date-fns';
 import type { Logger } from 'pino';
@@ -14,11 +14,13 @@ import type { NormalizedIngestMessage } from '../../../shared/domain/ingest-mess
 import { accountKeyFromWaChatJid } from '../../../shared/utils/whatsapp-jid.js';
 import { UserIntent, ParseStatus, type UserIntentType } from '../../../shared/types/intent.js';
 import { normalizeForMatch } from '../../../shared/utils/normalize-text.js';
+import { isMoneyOnlySegment } from '../../../shared/utils/split-financial-segments.js';
 import { normalizeVoiceNoteText } from '../../../shared/utils/voice-transcript-normalize.js';
 import type { AuditService } from '../../audit/application/audit.service.js';
 import type { CategoryRepository } from '../../categories/infra/category.repository.js';
 import { PendingContextType } from '../../confirmations/domain/pending-context.js';
 import { AudioTranscriptPayloadSchema } from '../../confirmations/dto/audio-transcript.payload.js';
+import { ReportScopePayloadSchema } from '../../confirmations/dto/report-scope.payload.js';
 import { TransactionDraftPayloadSchema } from '../../confirmations/dto/transaction-draft.payload.js';
 import type { PendingConfirmationRepository } from '../../confirmations/infra/pending-confirmation.repository.js';
 import { MediaStorageService } from '../../media/application/media-storage.service.js';
@@ -30,27 +32,49 @@ import type { RecurrenceDetectorService } from '../../recurrence/application/rec
 import type { ReportsService } from '../../reports/application/reports.service.js';
 import type { RuleRepository } from '../../rules/infra/rule.repository.js';
 import type { CreateTransactionUseCase } from '../../transactions/application/create-transaction.use-case.js';
-import { parseLastTransactionCommand } from '../../transactions/application/last-transaction-commands.js';
+import {
+  parseLastTransactionCommand,
+  prepareTransactionInboundSegments,
+} from '../../transactions/application/last-transaction-commands.js';
 import type { TransactionRepository } from '../../transactions/infra/transaction.repository.js';
 import type { TransactionDraftPayload } from '../../confirmations/dto/transaction-draft.payload.js';
 import type { OutboundMessagesPort } from '../../whatsapp/ports/outbound-messages.port.js';
 import {
+  replyAskReportScope,
   replyAudioTranscriptionPreview,
+  replyCancelLowConfidence,
+  replyCompoundBatchIntro,
+  replyCompoundStoppedForConfirmation,
   replyCategoryBreakdown,
   replyCategoryOptionsForLastTransaction,
   replyCategoryOptionsWhilePending,
+  replyClarifyTransactionTypeAgain,
+  replyInvalidPendingContext,
+  replyLastTxAmountFail,
+  replyLastTxAmountNeedsValue,
+  replyLastTxAmountUpdated,
+  replyLastTxCategoryNotFound,
+  replyLastTxCategoryUpdateFail,
+  replyLastTxCategoryUpdated,
+  replyLastTxDeleteFail,
+  replyLastTxDeleted,
+  replyLastTxNotFound,
   extendLowConfidenceClarification,
   replyExpenseRegistered,
   replyHelp,
   replyIncomeRegistered,
   replyIntro,
   replyLatestTransactions,
+  replyMoneyOnlyNotLancamento,
   replyMonthLedger,
+  replyNoTextInMessage,
   replyPendingLowConfidenceReminder,
   replyRecurring,
+  replyReportScopeUnclear,
   replySoftUnknown,
   replyTodayLedger,
   replyTopExpenses,
+  replyTranscriptionEmpty,
   replyTransferRegistered,
 } from '../../whatsapp/presentation/bot-replies.js';
 import type { EnsureUserUseCase } from '../../users/application/ensure-user.use-case.js';
@@ -69,10 +93,7 @@ function parseTypeClarification(text: string): TransactionType | null {
   return null;
 }
 
-function isSameAmountCreateParsed(
-  parsed: ParseResult,
-  draft: TransactionDraftPayload,
-): boolean {
+function isSameAmountCreateParsed(parsed: ParseResult, draft: TransactionDraftPayload): boolean {
   const type = draft.transactionType;
   if (!type || !parsed.amount) return false;
   const expectedIntent =
@@ -85,6 +106,25 @@ function isSameAmountCreateParsed(
   return new Decimal(draft.amount).equals(parsed.amount);
 }
 
+function parseReportScopeReply(text: string): 'DAY' | 'MONTH' | null {
+  const n = normalizeForMatch(text);
+  if (n.length > 48) return null;
+  const monthWords =
+    /\b(este mes|este mês|esse mes|esse mês|neste mes|neste mês|mes atual|mês atual|mensal)\b/.test(
+      n,
+    ) ||
+    /\bdo mes\b/.test(n) ||
+    /\bdo mês\b/.test(n) ||
+    /^mes$/u.test(n) ||
+    /^mês$/u.test(n);
+  const dayWords =
+    /\b(hoje|hj|neste dia|nesse dia|agora)\b/.test(n) || /\bdo dia\b/.test(n) || /^dia$/u.test(n);
+  if (monthWords && !dayWords) return 'MONTH';
+  if (dayWords && !monthWords) return 'DAY';
+  if (dayWords && monthWords) return 'DAY';
+  return null;
+}
+
 function isQueryIntentThatAbandonsPending(intent: UserIntentType): boolean {
   switch (intent) {
     case UserIntent.HELP:
@@ -95,6 +135,8 @@ function isQueryIntentThatAbandonsPending(intent: UserIntentType): boolean {
     case UserIntent.GET_TOP_EXPENSES:
     case UserIntent.GET_LAST_TRANSACTIONS:
     case UserIntent.GET_RECURRING_EXPENSES:
+      return true;
+    case UserIntent.CLARIFY_REPORT_PERIOD:
       return true;
     default:
       return false;
@@ -213,14 +255,15 @@ export class IngestInboundUseCase {
           buffer: buf,
         });
         const tr = await this.transcription.transcribe(mediaPath, event.mediaMimeType ?? undefined);
-        const rawTranscript = (tr.text || rawText || '').trim();
-        processedText = normalizeVoiceNoteText(rawTranscript) || rawTranscript;
+        const fromTranscription = tr.text.trim();
+        const rawTranscript = (
+          fromTranscription !== '' ? fromTranscription : (rawText ?? '')
+        ).trim();
+        const normalizedVoice = normalizeVoiceNoteText(rawTranscript);
+        processedText = normalizedVoice !== '' ? normalizedVoice : rawTranscript;
         sourceConfidence = tr.confidence;
         if (!tr.text.trim()) {
-          await this.safeSend(
-            replyJid,
-            'Não rolou transcrever esse áudio. Confere whisper/ffmpeg no projeto ou manda o mesmo recado em texto.',
-          );
+          await this.safeSend(replyJid, replyTranscriptionEmpty());
         }
       }
     }
@@ -235,10 +278,7 @@ export class IngestInboundUseCase {
 
     const textForPipeline = (processedText ?? '').replace(/\s+/g, ' ').trim();
     if (!textForPipeline) {
-      await this.safeSend(
-        replyJid,
-        'Não achei texto aqui. Manda de novo em texto, áudio ou uma foto com o valor legível.',
-      );
+      await this.safeSend(replyJid, replyNoTextInMessage());
       return;
     }
 
@@ -268,31 +308,75 @@ export class IngestInboundUseCase {
     );
     if (pendingHandled) return;
 
-    const cmd = parseLastTransactionCommand(textForPipeline);
-    if (cmd.kind !== 'NONE') {
-      await this.handleLastCommand(user.id, replyJid, cmd);
-      return;
+    await this.processInboundTextAfterPending(
+      user.id,
+      msg.id,
+      replyJid,
+      textForPipeline,
+      user.timezone,
+      sourceConfidence,
+    );
+  }
+
+  /**
+   * Processa texto após pendências resolvidas: vários lançamentos separados por vírgula
+   * ou um único comando / parse.
+   */
+  private async processInboundTextAfterPending(
+    userId: string,
+    messageId: string,
+    replyJid: string,
+    text: string,
+    userTimezone: string,
+    sourceConfidence: ConfidenceLevel | undefined,
+    opts?: { transactionSourceMessageId?: string },
+  ): Promise<void> {
+    const segments = prepareTransactionInboundSegments(text);
+    if (segments.length > 1) {
+      await this.pending.deleteForUser(userId);
+      await this.safeSend(replyJid, replyCompoundBatchIntro(segments.length));
     }
 
-    const rules = await this.rules.listActiveForUser(user.id);
-    const cats = await this.categories.listForUser(user.id);
-    const parsed = this.parser.parse({
-      text: textForPipeline,
-      now: new Date(),
-      userTimezone: user.timezone,
-      rules,
-      categories: cats,
-      sourceConfidence,
-    });
+    const rules = await this.rules.listActiveForUser(userId);
+    const cats = await this.categories.listForUser(userId);
 
-    await this.messages.updateMetadata(msg.id, {
-      intent: parsed.intent,
-      confidence: parsed.confidence,
-    });
+    for (const [i, seg] of segments.entries()) {
+      const cmd = parseLastTransactionCommand(seg);
+      if (cmd.kind !== 'NONE') {
+        await this.handleLastCommand(userId, replyJid, cmd);
+        continue;
+      }
 
-    await this.dispatchParsed(user.id, msg.id, replyJid, parsed, user.timezone, {
-      inboundText: textForPipeline,
-    });
+      if (isMoneyOnlySegment(seg)) {
+        await this.safeSend(replyJid, replyMoneyOnlyNotLancamento());
+        continue;
+      }
+
+      const parsed = this.parser.parse({
+        text: seg,
+        now: new Date(),
+        userTimezone,
+        rules,
+        categories: cats,
+        sourceConfidence,
+      });
+
+      await this.messages.updateMetadata(messageId, {
+        intent: parsed.intent,
+        confidence: parsed.confidence,
+      });
+
+      await this.dispatchParsed(userId, messageId, replyJid, parsed, userTimezone, {
+        inboundText: seg,
+        transactionSourceMessageId: opts?.transactionSourceMessageId,
+      });
+
+      const pendingNow = await this.pending.findLatestActive(userId, new Date());
+      if (pendingNow !== null && i < segments.length - 1) {
+        await this.safeSend(replyJid, replyCompoundStoppedForConfirmation(segments.length - i - 1));
+        break;
+      }
+    }
   }
 
   private async runPipelineAfterAudioConfirm(
@@ -312,26 +396,15 @@ export class IngestInboundUseCase {
       }
     }
 
-    const rules = await this.rules.listActiveForUser(userId);
-    const cats = await this.categories.listForUser(userId);
-    const parsed = this.parser.parse({
-      text: transcribedText,
-      now: new Date(),
+    await this.processInboundTextAfterPending(
+      userId,
+      confirmMessageId,
+      replyJid,
+      transcribedText.trim(),
       userTimezone,
-      rules,
-      categories: cats,
       sourceConfidence,
-    });
-
-    await this.messages.updateMetadata(confirmMessageId, {
-      intent: parsed.intent,
-      confidence: parsed.confidence,
-    });
-
-    await this.dispatchParsed(userId, confirmMessageId, replyJid, parsed, userTimezone, {
-      transactionSourceMessageId: audioMessageId,
-      inboundText: transcribedText,
-    });
+      { transactionSourceMessageId: audioMessageId },
+    );
   }
 
   private async safeSend(replyJid: string, text: string): Promise<void> {
@@ -378,6 +451,39 @@ export class IngestInboundUseCase {
       return true;
     }
 
+    if (active.contextType === PendingContextType.CLARIFY_REPORT_PERIOD) {
+      const payload = ReportScopePayloadSchema.safeParse(active.payload);
+      if (!payload.success) {
+        await this.pending.deleteById(active.id);
+        return false;
+      }
+      const n = normalizeForMatch(text);
+      if (/\b(ajuda|help)\b/.test(n)) {
+        await this.pending.deleteById(active.id);
+        return false;
+      }
+      const scope = parseReportScopeReply(text);
+      if (!scope) {
+        await this.safeSend(replyJid, replyReportScopeUnclear());
+        return true;
+      }
+      await this.pending.deleteById(active.id);
+      if (scope === 'DAY') {
+        const day = await this.reports.dailySummary(userId, userTimezone);
+        const breakdown = await this.reports.categoryBreakdownToday(userId, userTimezone);
+        const top = await this.reports.topExpensesToday(userId, userTimezone, 5);
+        await this.safeSend(replyJid, replyTodayLedger(day, breakdown, top));
+      } else {
+        const { current, previous } = await this.reports.compareToPreviousMonth(
+          userId,
+          userTimezone,
+        );
+        const breakdown = await this.reports.categoryBreakdown(userId, userTimezone);
+        await this.safeSend(replyJid, replyMonthLedger(current, previous, breakdown));
+      }
+      return true;
+    }
+
     if (active.contextType === PendingContextType.CLARIFY_TRANSACTION_TYPE) {
       const draft = TransactionDraftPayloadSchema.safeParse(active.payload);
       if (!draft.success) {
@@ -386,10 +492,7 @@ export class IngestInboundUseCase {
       }
       const t = parseTypeClarification(text);
       if (!t) {
-        await this.safeSend(
-          replyJid,
-          'Preciso só saber: foi *despesa*, *receita* ou *transferência*?',
-        );
+        await this.safeSend(replyJid, replyClarifyTransactionTypeAgain());
         return true;
       }
       await this.pending.deleteById(active.id);
@@ -441,10 +544,7 @@ export class IngestInboundUseCase {
 
       if (isExplicitCancellation(text)) {
         await this.pending.deleteById(active.id);
-        await this.safeSend(
-          replyJid,
-          'Beleza, *não salvei* esse lançamento. Quando quiser, manda de novo.',
-        );
+        await this.safeSend(replyJid, replyCancelLowConfidence());
         return true;
       }
 
@@ -459,7 +559,7 @@ export class IngestInboundUseCase {
         const occurredAt = new Date(draft.data.occurredAt);
         const type = draft.data.transactionType;
         if (!type) {
-          await this.safeSend(replyJid, 'Contexto inválido. Tente novamente.');
+          await this.safeSend(replyJid, replyInvalidPendingContext());
           return true;
         }
         await this.createTx.execute({
@@ -520,13 +620,17 @@ export class IngestInboundUseCase {
   ): Promise<void> {
     const last = await this.transactions.findLastForUser(userId);
     if (!last) {
-      await this.safeSend(replyJid, 'Não encontrei lançamento recente.');
+      await this.safeSend(replyJid, replyLastTxNotFound());
+      return;
+    }
+    if (cmd.kind === 'UPDATE_LAST_AMOUNT_NEEDS_VALUE') {
+      await this.safeSend(replyJid, replyLastTxAmountNeedsValue());
       return;
     }
     if (cmd.kind === 'DELETE_LAST') {
       const del = await this.transactions.softDelete(last.id, userId);
       if (!del) {
-        await this.safeSend(replyJid, 'Não foi possível apagar.');
+        await this.safeSend(replyJid, replyLastTxDeleteFail());
         return;
       }
       await this.audit.log({
@@ -536,13 +640,13 @@ export class IngestInboundUseCase {
         entityId: last.id,
         before: { amount: last.amount.toString(), description: last.description },
       });
-      await this.safeSend(replyJid, 'Último lançamento apagado.');
+      await this.safeSend(replyJid, replyLastTxDeleted());
       return;
     }
     if (cmd.kind === 'UPDATE_LAST_AMOUNT') {
       const updated = await this.transactions.updateAmount(last.id, userId, cmd.amount);
       if (!updated) {
-        await this.safeSend(replyJid, 'Não foi possível atualizar o valor.');
+        await this.safeSend(replyJid, replyLastTxAmountFail());
         return;
       }
       await this.audit.log({
@@ -553,10 +657,7 @@ export class IngestInboundUseCase {
         before: { amount: last.amount.toString() },
         after: { amount: cmd.amount.toString() },
       });
-      await this.safeSend(
-        replyJid,
-        `Valor atualizado para ${cmd.amount.toFixed(2).replace('.', ',')} BRL.`,
-      );
+      await this.safeSend(replyJid, replyLastTxAmountUpdated(cmd.amount));
       return;
     }
     if (cmd.kind === 'UPDATE_LAST_CATEGORY') {
@@ -577,15 +678,12 @@ export class IngestInboundUseCase {
           );
           return;
         }
-        await this.safeSend(
-          replyJid,
-          'Não achei essa categoria. Liste um nome próximo ao das categorias padrão.',
-        );
+        await this.safeSend(replyJid, replyLastTxCategoryNotFound());
         return;
       }
       const updated = await this.transactions.updateCategory(last.id, userId, match.id);
       if (!updated) {
-        await this.safeSend(replyJid, 'Não foi possível atualizar a categoria.');
+        await this.safeSend(replyJid, replyLastTxCategoryUpdateFail());
         return;
       }
       await this.audit.log({
@@ -595,7 +693,7 @@ export class IngestInboundUseCase {
         entityId: last.id,
         after: { categoryId: match.id },
       });
-      await this.safeSend(replyJid, `Categoria atualizada para ${match.name}.`);
+      await this.safeSend(replyJid, replyLastTxCategoryUpdated(match.name));
     }
   }
 
@@ -615,6 +713,17 @@ export class IngestInboundUseCase {
         return;
       case UserIntent.HELP:
         await this.safeSend(replyJid, replyHelp());
+        return;
+      case UserIntent.CLARIFY_REPORT_PERIOD:
+        await this.pending.deleteForUser(userId);
+        await this.pending.create({
+          userId,
+          messageId,
+          contextType: PendingContextType.CLARIFY_REPORT_PERIOD,
+          payload: {},
+          expiresAt: addHours(new Date(), 24),
+        });
+        await this.safeSend(replyJid, replyAskReportScope());
         return;
       case UserIntent.GET_TODAY_SUMMARY: {
         const day = await this.reports.dailySummary(userId, timeZone);
@@ -706,7 +815,11 @@ export class IngestInboundUseCase {
             expiresAt: addHours(new Date(), 24),
           });
         }
-        if (!isTypeClarification && parsed.confidence === ConfidenceLevel.LOW && parsed.clarification) {
+        if (
+          !isTypeClarification &&
+          parsed.confidence === ConfidenceLevel.LOW &&
+          parsed.clarification
+        ) {
           await this.safeSend(replyJid, extendLowConfidenceClarification(parsed.clarification));
         } else if (parsed.clarification) {
           await this.safeSend(replyJid, parsed.clarification);
@@ -756,10 +869,7 @@ export class IngestInboundUseCase {
     const cat = categoryId ? cats.find((c) => c.id === categoryId) : undefined;
     const place = description.slice(0, 40);
     if (type === TransactionType.EXPENSE) {
-      await this.safeSend(
-        replyJid,
-        replyExpenseRegistered(amount, place, cat?.name ?? 'Outros'),
-      );
+      await this.safeSend(replyJid, replyExpenseRegistered(amount, place, cat?.name ?? 'Outros'));
       return;
     }
     if (type === TransactionType.INCOME) {

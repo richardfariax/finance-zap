@@ -1,6 +1,6 @@
 import { createWorker } from 'tesseract.js';
 import sharp from 'sharp';
-import { ConfidenceLevel } from '@prisma/client';
+import { ConfidenceLevel } from '../../../shared/types/prisma-enums.js';
 import { env } from '../../../config/env.js';
 import type { OcrProvider, OcrResult } from '../domain/ocr-provider.js';
 

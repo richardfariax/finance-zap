@@ -31,7 +31,9 @@ async function main() {
       await new Promise((r) => setTimeout(r, delayMs));
     }
   }
-  console.error(`\n[finance-zap] Postgres not reachable at ${host}:${String(port)} after ${String(maxAttempts)}s`);
+  console.error(
+    `\n[finance-zap] Postgres not reachable at ${host}:${String(port)} after ${String(maxAttempts)}s`,
+  );
   process.exit(1);
 }
 

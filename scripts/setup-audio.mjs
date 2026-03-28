@@ -201,9 +201,13 @@ function setupUnixCli() {
   run('cmake', cmakeArgs, { cwd: WHISPER_SRC });
   console.log('[setup-audio] Compilando whisper-cli (pode levar mais de um minuto)…');
   const cores = String(process.env.CMAKE_BUILD_PARALLEL_LEVEL || '4');
-  run('cmake', ['--build', buildDir, '--config', 'Release', '-j', cores, '--target', 'whisper-cli'], {
-    cwd: WHISPER_SRC,
-  });
+  run(
+    'cmake',
+    ['--build', buildDir, '--config', 'Release', '-j', cores, '--target', 'whisper-cli'],
+    {
+      cwd: WHISPER_SRC,
+    },
+  );
   const built = join(buildDir, 'bin', whisperCliName());
   if (!existsSync(built)) {
     throw new Error(`Compilação não gerou ${built}`);

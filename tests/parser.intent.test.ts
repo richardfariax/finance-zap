@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { FinancialParserService } from '../src/modules/parser/application/financial-parser.service.js';
 import { UserIntent, ParseStatus } from '../src/shared/types/intent.js';
 import type { Category, Rule } from '@prisma/client';
-import { CategoryKind, ConfidenceLevel } from '@prisma/client';
+import { CategoryKind, ConfidenceLevel } from '../src/shared/types/prisma-enums.js';
 
 const baseCategories: Category[] = [
   {
@@ -97,6 +97,21 @@ describe('FinancialParserService', () => {
     expect(r.clarification).toContain('despesa');
   });
 
+  it('"resumo" sem período pede esclarecimento de período', () => {
+    const r = parseText('resumo');
+    expect(r.intent).toBe(UserIntent.CLARIFY_REPORT_PERIOD);
+  });
+
+  it('"resumo do mês" é mensal', () => {
+    const r = parseText('resumo do mês');
+    expect(r.intent).toBe(UserIntent.GET_MONTH_SUMMARY);
+  });
+
+  it('"resumo hoje" é do dia', () => {
+    const r = parseText('resumo hoje');
+    expect(r.intent).toBe(UserIntent.GET_TODAY_SUMMARY);
+  });
+
   it('reconhece resumo mensal', () => {
     const r = parseText('quanto gastei esse mês?');
     expect(r.intent).toBe(UserIntent.GET_MONTH_SUMMARY);
@@ -116,7 +131,7 @@ describe('FinancialParserService', () => {
     const r = parseText('recebi 50 reais de fulano');
     expect(r.intent).toBe(UserIntent.CREATE_INCOME);
     expect(r.amount?.toString()).toBe('50');
-    expect(r.description).toContain('Luana');
+    expect(r.description).toMatch(/Fulano/i);
     expect(r.description.toLowerCase()).toContain('recebido');
   });
 
@@ -184,5 +199,12 @@ describe('FinancialParserService', () => {
     });
     expect(r.intent).toBe(UserIntent.CREATE_INCOME);
     expect(r.status).toBe(ParseStatus.OK);
+  });
+
+  it('não registra despesa quando parece correção sem verbo de lançamento', () => {
+    const r = parseText('corrige esse lançamento 45,90');
+    expect(r.intent).toBe(UserIntent.UNKNOWN);
+    expect(r.status).toBe(ParseStatus.FAILED);
+    expect(r.clarification).toBeDefined();
   });
 });

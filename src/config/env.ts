@@ -18,12 +18,7 @@ const envSchema = z.object({
   TESSERACT_LANG: z.string().min(1).default('por+eng'),
   WHISPER_CLI_PATH: z.string().optional(),
   WHISPER_MODEL_PATH: z.string().optional(),
-  /** Idioma passado ao whisper.cpp (`-l`), ex.: pt, auto */
   WHISPER_LANG: z.string().min(1).default('pt'),
-  /**
-   * Texto opcional passado ao whisper.cpp como `--prompt` (vocabulário / estilo esperado).
-   * Ajuda com valores em reais e verbos comuns de gasto/receita. Builds antigas sem --prompt: deixe vazio.
-   */
   WHISPER_PROMPT: z.string().optional(),
   FFMPEG_PATH: z.string().min(1).default('ffmpeg'),
   DEFAULT_TIMEZONE: z.string().min(1).default('America/Sao_Paulo'),

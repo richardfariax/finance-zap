@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { ReportsService } from '../src/modules/reports/application/reports.service.js';
-import { TransactionRepository } from '../src/modules/transactions/infra/transaction.repository.js';
-import { CategoryRepository } from '../src/modules/categories/infra/category.repository.js';
-import { TransactionType } from '@prisma/client';
+import type { TransactionRepository } from '../src/modules/transactions/infra/transaction.repository.js';
+import type { CategoryRepository } from '../src/modules/categories/infra/category.repository.js';
+import { TransactionType } from '../src/shared/types/prisma-enums.js';
 
 describe('ReportsService', () => {
   it('calcula saldo do mês a partir do aggregate', async () => {

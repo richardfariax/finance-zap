@@ -4,7 +4,8 @@ import type {
   MonthlySummary,
   CategoryBreakdownRow,
 } from '../../reports/application/reports.service.js';
-import type { Transaction, TransactionType } from '@prisma/client';
+import type { Transaction } from '@prisma/client';
+import type { TransactionType } from '../../../shared/types/prisma-enums.js';
 
 const moneyFmt = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -17,16 +18,132 @@ function titleCasePt(s: string): string {
   return s.charAt(0).toLocaleUpperCase('pt-BR') + s.slice(1);
 }
 
+export function replyParserNeedValueOnly(): string {
+  return ['💰 *Valor não identificado*', '', 'Mande só o *valor* (ex.: *45,90* ou *120*).'].join(
+    '\n',
+  );
+}
+
+export function replyParserUnknownWithExamples(): string {
+  return [
+    '🤔 *Não consegui interpretar*',
+    '',
+    'Tente algo como:',
+    '• *recebi 80 de fulano*',
+    '• *paguei 45 no mercado*',
+    '• *uber 23,50*',
+    '',
+    '🔗 Vários de uma vez: *uber 10, mercado 40*',
+    '',
+    '✏️ *Corrigir o último:* *corrige o último para 59,90* (numa linha ou *corrige o último, 59,90*)',
+    '',
+    '📘 Digite *ajuda* para ver tudo.',
+  ].join('\n');
+}
+
+/** Parece ajuste do último lançamento, não um registro novo. */
+export function replyParserCorrectionNotLancamento(): string {
+  return [
+    '✏️ *Parece correção, não um lançamento novo*',
+    '',
+    'Para mudar o *valor* do último:',
+    '• *corrige o último para 59,90*',
+    '• ou *corrige para 59,90* (logo após registrar)',
+    '',
+    'Para *apagar* o último: *apaga o último lançamento*',
+  ].join('\n');
+}
+
+/** Trecho só com número, sem descrição (ex.: vírgula que partiu a frase). */
+export function replyMoneyOnlyNotLancamento(): string {
+  return [
+    '💡 *Só apareceu um valor*',
+    '',
+    'Para registrar, junte descrição e valor: *uber 23,50* ou *mercado 40*.',
+    '',
+    'Se era para *corrigir o último*, use: *corrige o último para 59,90*.',
+  ].join('\n');
+}
+
+/** Inclui "despesa, receita ou transferência" para o ingest reconhecer a pendência. */
+export function replyParserAskTransactionKind(): string {
+  return [
+    '❓ *Qual tipo de movimentação?*',
+    '',
+    'Foi *despesa*, *receita* ou *transferência*?',
+    '',
+    '_Responda com uma dessas palavras: despesa, receita ou transferência._',
+  ].join('\n');
+}
+
+export function replyParserSuggestCategoryName(categoryName: string | null): string {
+  const cat = categoryName ?? 'Outros';
+  return [
+    '🏷️ *Categoria sugerida*',
+    '',
+    `Usei *${cat}*.`,
+    '',
+    '✅ *sim* — confirma',
+    '✏️ Outro *nome* — troca a categoria',
+  ].join('\n');
+}
+
+export function replyCompoundBatchIntro(count: number): string {
+  return [
+    '🔗 *Vários lançamentos*',
+    '',
+    `Separei *${count}* registros (cada um após *vírgula* — valores tipo *23,50* contam como um valor só).`,
+    '',
+    'Processando em sequência…',
+  ].join('\n');
+}
+
+export function replyCompoundStoppedForConfirmation(remaining: number): string {
+  const r = remaining === 1 ? '1 lançamento' : `${String(remaining)} lançamentos`;
+  return [
+    '⏸️ *Aguardando confirmação*',
+    '',
+    `Faltam *${r}* depois deste.`,
+    '',
+    'Responda à mensagem anterior (*sim*, nome da categoria…).',
+    'Depois mande de novo o que faltou, se quiser.',
+  ].join('\n');
+}
+
+export function replyAskReportScope(): string {
+  return [
+    '📊 *Resumo*',
+    '',
+    'Você quer ver:',
+    '',
+    '📅 *Hoje* — movimentação do dia',
+    '🗓️ *Mês* — levantamento do mês atual',
+    '',
+    '_Responda *hoje* ou *mês*._',
+  ].join('\n');
+}
+
+export function replyReportScopeUnclear(): string {
+  return ['👆 Só preciso de uma opção:', '', '• *hoje* — dia', '• *mês* — mês atual'].join('\n');
+}
+
 export function replyExpenseRegistered(amount: Decimal, place: string, category: string): string {
-  return `Pronto! Registrei *${formatMoney(amount)}* em “${place}” (${category}). Se quiser mudar a categoria, é só falar.`;
+  return [
+    '✅ *Registrado*',
+    '',
+    `${formatMoney(amount)} · ${place}`,
+    `🏷️ ${category}`,
+    '',
+    '_Quer mudar a categoria? É só avisar._',
+  ].join('\n');
 }
 
 export function replyIncomeRegistered(amount: Decimal, label: string): string {
-  return `Feito! Entrou *${formatMoney(amount)}* — ${label}.`;
+  return ['✅ *Receita anotada*', '', formatMoney(amount), `📥 ${label}`].join('\n');
 }
 
 export function replyTransferRegistered(amount: Decimal, label: string): string {
-  return `Anotado: *${formatMoney(amount)}* (${label}).`;
+  return ['✅ *Transferência anotada*', '', formatMoney(amount), `↔️ ${label}`].join('\n');
 }
 
 /** @deprecated Prefer replyMonthLedger; mantido para compat. */
@@ -42,34 +159,34 @@ export function replyMonthLedger(
   const deltaExp = current.expense.minus(previous.expense);
   let comparativo: string;
   if (deltaExp.isZero()) {
-    comparativo = 'No mesmo patamar de despesas do mês anterior.';
+    comparativo = 'Mesmo patamar de despesas que o mês anterior.';
   } else if (deltaExp.gt(0)) {
-    comparativo = `*${formatMoney(deltaExp.abs())}* a mais em despesas que no mês anterior.`;
+    comparativo = `📈 *${formatMoney(deltaExp.abs())}* a mais que no mês anterior.`;
   } else {
-    comparativo = `*${formatMoney(deltaExp.abs())}* a menos em despesas que no mês anterior.`;
+    comparativo = `📉 *${formatMoney(deltaExp.abs())}* a menos que no mês anterior.`;
   }
 
   const lines: string[] = [
-    '📅 *Levantamento do mês*',
+    '🗓️ *Mês*',
     `_${current.monthLabel}_`,
     '',
-    '*Resumo financeiro*',
-    `• Receitas · *${formatMoney(current.income)}*`,
-    `• Despesas · *${formatMoney(current.expense)}*`,
-    `• Saldo (R − D) · *${formatMoney(current.balance)}*`,
+    '💵 *Totais*',
+    `➕ Receitas · *${formatMoney(current.income)}*`,
+    `➖ Despesas · *${formatMoney(current.expense)}*`,
+    `⚖️ Saldo · *${formatMoney(current.balance)}*`,
     '',
-    '*Comparativo*',
-    `• Despesas no mês anterior · ${formatMoney(previous.expense)}`,
-    `• ${comparativo}`,
+    '📊 *Comparativo*',
+    `Mês anterior (despesas): ${formatMoney(previous.expense)}`,
+    comparativo,
   ];
 
   if (breakdown.length > 0) {
-    lines.push('', '*Despesas por categoria*');
+    lines.push('', '📂 *Por categoria*');
     breakdown.slice(0, 10).forEach((r, i) => {
       lines.push(`${String(i + 1)}. ${r.categoryName} · *${formatMoney(r.total)}*`);
     });
   } else {
-    lines.push('', '_Nenhuma despesa categorizada neste mês._');
+    lines.push('', '_Sem despesas categorizadas neste mês._');
   }
 
   return lines.join('\n');
@@ -83,34 +200,34 @@ export function replyTodayLedger(
   const wd = titleCasePt(day.weekdayLabel);
   if (day.income.isZero() && day.expense.isZero()) {
     return [
-      '📊 *Seu dia*',
+      '📅 *Hoje*',
       `_${wd}, ${day.dayLabel}_`,
       '',
-      '_Não há lançamentos registrados para hoje no seu fuso._',
+      '_Nada registrado ainda hoje._',
       '',
-      'Quando anotar gastos ou receitas, o resumo aparece aqui.',
+      'Quando você anotar gastos ou entradas, o resumo aparece aqui.',
     ].join('\n');
   }
 
   const lines: string[] = [
-    '📊 *Levantamento do dia*',
+    '📅 *Hoje*',
     `_${wd}, ${day.dayLabel}_`,
     '',
-    '*Resumo*',
-    `• Receitas · *${formatMoney(day.income)}*`,
-    `• Despesas · *${formatMoney(day.expense)}*`,
-    `• Saldo do dia · *${formatMoney(day.balance)}*`,
+    '💵 *Resumo*',
+    `➕ Receitas · *${formatMoney(day.income)}*`,
+    `➖ Despesas · *${formatMoney(day.expense)}*`,
+    `⚖️ Saldo · *${formatMoney(day.balance)}*`,
   ];
 
   if (breakdown.length > 0) {
-    lines.push('', '*Despesas por categoria*');
+    lines.push('', '📂 *Despesas por categoria*');
     breakdown.slice(0, 10).forEach((r, i) => {
       lines.push(`${String(i + 1)}. ${r.categoryName} · *${formatMoney(r.total)}*`);
     });
   }
 
   if (top.length > 0) {
-    lines.push('', '*Maiores despesas do dia*');
+    lines.push('', '🔝 *Maiores despesas*');
     top.forEach((t, i) => {
       const amt = new Decimal(t.amount.toString());
       lines.push(`${String(i + 1)}. ${t.description.slice(0, 38)} · *${formatMoney(amt)}*`);
@@ -121,50 +238,77 @@ export function replyTodayLedger(
 }
 
 export function replyCategoryBreakdown(rows: CategoryBreakdownRow[]): string {
-  if (rows.length === 0) return 'Ainda não há despesas categorizadas neste mês.';
+  if (rows.length === 0) {
+    return ['📂 *Por categoria*', '', '_Nenhuma despesa categorizada no mês._'].join('\n');
+  }
   const top = rows.slice(0, 5);
-  const parts = top.map((r) => `${r.categoryName} (${formatMoney(r.total)})`);
-  return `Onde mais saiu dinheiro: ${parts.join(', ')}.`;
+  const lines = [
+    '📂 *Onde mais saiu*',
+    '',
+    ...top.map((r, i) => `${String(i + 1)}. ${r.categoryName} · *${formatMoney(r.total)}*`),
+  ];
+  return lines.join('\n');
 }
 
 export function replyTopExpenses(txs: Transaction[]): string {
-  if (txs.length === 0) return 'Sem despesas no período.';
-  const lines = txs.map(
-    (t, i) =>
-      `${String(i + 1)}. ${t.description.slice(0, 40)} — ${formatMoney(new Decimal(t.amount.toString()))}`,
-  );
-  return `Maiores gastos:\n${lines.join('\n')}`;
+  if (txs.length === 0) {
+    return ['🔝 *Maiores gastos*', '', '_Nada no período._'].join('\n');
+  }
+  const lines = [
+    '🔝 *Maiores gastos*',
+    '',
+    ...txs.map(
+      (t, i) =>
+        `${String(i + 1)}. ${t.description.slice(0, 40)} · *${formatMoney(new Decimal(t.amount.toString()))}*`,
+    ),
+  ];
+  return lines.join('\n');
 }
 
 export function replyLatestTransactions(txs: Transaction[]): string {
-  if (txs.length === 0) return 'Nenhum lançamento ainda por aqui.';
-  const lines = txs.map((t) => {
-    return `• ${t.type} ${formatMoney(new Decimal(t.amount.toString()))} — ${t.description.slice(0, 36)}`;
-  });
-  return `Últimos lançamentos:\n${lines.join('\n')}`;
+  if (txs.length === 0) {
+    return ['📋 *Últimos lançamentos*', '', '_Ainda vazio._'].join('\n');
+  }
+  const lines = [
+    '📋 *Últimos lançamentos*',
+    '',
+    ...txs.map((t) => {
+      const icon = t.type === 'INCOME' ? '➕' : t.type === 'EXPENSE' ? '➖' : '↔️';
+      return `${icon} ${formatMoney(new Decimal(t.amount.toString()))} · ${t.description.slice(0, 36)}`;
+    }),
+  ];
+  return lines.join('\n');
 }
 
 export function replyRecurring(
   list: { description: string; frequency: string; amount: string | null }[],
 ): string {
-  if (list.length === 0) return 'Ainda não peguei um padrão bem claro de recorrência.';
-  const lines = list
-    .slice(0, 8)
-    .map((r) => `• ${r.description} (${r.frequency})${r.amount ? ` ~ ${r.amount}` : ''}`);
-  return `Coisas que parecem repetir:\n${lines.join('\n')}`;
+  if (list.length === 0) {
+    return ['🔁 *Recorrentes*', '', '_Nenhum padrão forte detectado ainda._'].join('\n');
+  }
+  const lines = [
+    '🔁 *Parecem recorrentes*',
+    '',
+    ...list
+      .slice(0, 8)
+      .map((r) => `• ${r.description} (${r.frequency})${r.amount ? ` ~ ${r.amount}` : ''}`),
+  ];
+  return lines.join('\n');
 }
 
 export function replyIntro(): string {
   return [
-    'Oi! Sou o *Finance Zap* — te ajudo a anotar grana sem planilha.',
+    '👋 *Finance Zap*',
     '',
-    'Manda em texto ou *áudio*, tipo:',
-    '• *uber 23,50* ou *gastei 40 no mercado*',
+    'Anoto suas finanças por aqui — sem planilha.',
+    '',
+    '✏️ *Exemplos*',
+    '• *uber 23,50*',
+    '• *gastei 40 no mercado*',
     '• *recebi 50 de fulano*',
+    '• *vários:* uber 10, padaria 15',
     '',
-    'Perguntas: *quanto gastei hoje?* · *quanto gastei esse mês?* · *ajuda*',
-    '',
-    'Pode mandar o que precisar.',
+    '📊 *Resumo* · 📘 *ajuda*',
   ].join('\n');
 }
 
@@ -174,62 +318,67 @@ export function replyWelcome(): string {
 
 export function replyHelp(): string {
   return [
-    '📘 *Finance Zap — Central de ajuda*',
+    '📘 *Ajuda — Finance Zap*',
     '',
-    'Use frases naturais em português. Exemplos abaixo são só guia; variações parecidas costumam funcionar.',
+    'Fale em português, do seu jeito.',
     '',
-    '━━ *1. Despesas (gastos)* ━━',
-    '• `uber 23,50`',
-    '• `gastei 45 no mercado hoje`',
-    '• `paguei 120 pra fulana referente ao jantar`',
+    '➖ *Despesa*',
+    '• uber 23,50',
+    '• gastei 45 no mercado',
+    '• vários na mesma mensagem: *uber 10, mercado 40*',
     '',
-    '━━ *2. Receitas* ━━',
-    '• `recebi 2500 de salário`',
-    '• `recebi 80 de fulano`',
+    '➕ *Receita*',
+    '• recebi 2500 de salário',
+    '• recebi 80 de fulano',
     '',
-    '━━ *3. Relatórios e consultas* ━━',
-    '• `quanto gastei hoje?` — resumo do dia',
-    '• `quanto gastei esse mês?` / `resumo do mês` — levantamento mensal',
-    '• `onde estou gastando mais?` — por categoria (mês atual)',
-    '• `últimos lançamentos` — extrato recente',
+    '📊 *Consultas*',
+    '• *resumo* → pergunto dia ou mês',
+    '• *quanto gastei hoje?*',
+    '• *quanto gastei esse mês?*',
+    '• *onde estou gastando mais?*',
+    '• *últimos lançamentos*',
     '',
-    '━━ *4. Ajustar o último lançamento* ━━',
-    '• `apaga o último`',
-    '• `corrige o último para 59,90`',
-    '• `muda a categoria do último para alimentação`',
+    '✏️ *Último lançamento*',
+    '• apaga o último lançamento',
+    '• corrige o último para 59,90 (ou *corrige para 59,90* em seguida)',
+    '• *corrige o último, 59,90* — vírgula não vira lançamento novo',
+    '• muda a categoria do último para alimentação',
     '',
-    '━━ *5. Áudio e imagem* ━━',
-    '• *Áudio*: transcrevo o que disser e peço *sim* para confirmar antes de salvar.',
-    '• *Foto* de cupom ou print com valor legível.',
+    '🎤 *Áudio / foto*',
+    'Áudio: transcrevo e peço *sim* antes de salvar.',
     '',
-    'Dúvidas pontuais: pergunte de novo ou reformule a frase.',
+    '💬 Dúvida? Reformule ou diga *ajuda*.',
   ].join('\n');
 }
 
-/** Uma única mensagem no fluxo de confirmação de categoria (evita duplicar instruções). */
 export function extendLowConfidenceClarification(clarification: string): string {
   return [
     clarification.trim(),
     '',
-    '_Opcional:_ *quais categorias* — ver nomes · *cancelar* — desistir sem salvar.',
+    '💡 *quais categorias* — lista',
+    '🚫 *cancelar* — não salvar',
+    '',
+    '🔗 Outros lançamentos na mesma mensagem: use *vírgula* entre eles.',
   ].join('\n');
 }
 
 export function replyPendingLowConfidenceReminder(): string {
   return [
-    'Esse lançamento continua *pendente*: responda *sim* pra confirmar a categoria sugerida, ou mande o *nome* de outra categoria.',
+    '⏳ *Lançamento pendente*',
     '',
-    '*Quais categorias* — lista · *cancelar* — não salvar.',
+    '✅ *sim* — confirma a categoria',
+    '✏️ *nome* — outra categoria',
+    '',
+    '💡 *quais categorias* · 🚫 *cancelar*',
   ].join('\n');
 }
 
 function categoryListIntroForType(transactionType: TransactionType): string {
-  if (transactionType === 'EXPENSE') return 'Pra esta *despesa*, você pode usar:';
-  if (transactionType === 'INCOME') return 'Pra esta *receita*, você pode usar:';
-  return 'Pra esta *transferência*, costuma encaixar numa destas:';
+  if (transactionType === 'EXPENSE') return '📂 *Despesa — categorias*';
+  if (transactionType === 'INCOME') return '📂 *Receita — categorias*';
+  return '📂 *Transferência — categorias*';
 }
 
-/** Lista nomes de categorias enquanto o usuário confirma ou escolhe categoria em um lançamento pendente. */
 export function replyCategoryOptionsWhilePending(
   categoryNames: string[],
   transactionType: TransactionType | null,
@@ -237,17 +386,10 @@ export function replyCategoryOptionsWhilePending(
   const lines = categoryNames.map((name) => `• ${name}`);
   const intro = transactionType
     ? categoryListIntroForType(transactionType)
-    : 'Estas são as *categorias* que você pode usar:';
-  return [
-    intro,
-    '',
-    ...lines,
-    '',
-    'Se a sugestão anterior estiver certa, manda *sim*. Se for outra, manda só o *nome* da categoria.',
-  ].join('\n');
+    : '📂 *Categorias disponíveis*';
+  return [intro, '', ...lines, '', '✅ *sim* confirma · ✏️ *nome* troca'].join('\n');
 }
 
-/** Lista categorias ao ajustar o último lançamento quando o usuário pergunta quais existem. */
 export function replyCategoryOptionsForLastTransaction(
   categoryNames: string[],
   transactionType: TransactionType,
@@ -258,20 +400,21 @@ export function replyCategoryOptionsForLastTransaction(
     '',
     ...lines,
     '',
-    'Para aplicar: *muda a categoria do último para (nome)*.',
+    '💬 *muda a categoria do último para (nome)*',
   ].join('\n');
 }
 
 export function replySoftUnknown(): string {
   return [
-    'Não consegui entender essa mensagem.',
+    '🤔 *Não entendi*',
     '',
-    'Exemplos de lançamento:',
-    '• *recebi 50 de fulano*',
-    '• *paguei 120 pra fulano referente ao almoço*',
-    '• *gastei 35 no mercado* · *uber 18,90*',
+    'Exemplos:',
+    '• recebi 50 de fulano',
+    '• paguei 120 no almoço',
+    '• uber 18,90',
+    '• uber 10, padaria 20',
     '',
-    'Também pode mandar *áudio* ou digitar *ajuda*.',
+    '🎤 Áudio · 📘 *ajuda*',
   ].join('\n');
 }
 
@@ -281,11 +424,89 @@ export function replyAudioTranscriptionPreview(transcribedText: string): string 
       ? `${transcribedText.slice(0, 277).trim()}…`
       : transcribedText.trim();
   return [
-    'Pelo áudio, entendi isto:',
+    '🎤 *Transcrição*',
     '',
     `_"${clip}"_`,
     '',
-    'Se estiver certo, responda *sim* (ou *ok*) para eu registrar.',
-    'Se não bateu, manda *outro áudio* ou escreva em texto.',
+    '✅ *sim* ou *ok* — registrar',
+    '🔁 Outro áudio ou texto — corrigir',
+    '',
+    '🔗 Vários de uma vez: separe com *vírgula* (ex.: *uber 10, mercado 20*).',
   ].join('\n');
+}
+
+export function replyTranscriptionEmpty(): string {
+  return [
+    '🎤 *Transcrição vazia*',
+    '',
+    'Confira *Whisper* e *ffmpeg* no `.env`.',
+    'Ou mande em *texto*.',
+  ].join('\n');
+}
+
+export function replyNoTextInMessage(): string {
+  return ['📝 *Sem texto*', '', 'Mande em texto, áudio ou foto com valor legível.'].join('\n');
+}
+
+export function replyClarifyTransactionTypeAgain(): string {
+  return ['❓ *Só falta o tipo*', '', '*despesa*, *receita* ou *transferência*?'].join('\n');
+}
+
+export function replyCancelLowConfidence(): string {
+  return [
+    '🚫 *Descartado*',
+    '',
+    'Não salvei esse lançamento.',
+    'Quando quiser, manda de novo.',
+  ].join('\n');
+}
+
+export function replyInvalidPendingContext(): string {
+  return ['⚠️ Algo deu errado no contexto.', '', 'Tente o lançamento de novo.'].join('\n');
+}
+
+export function replyLastTxNotFound(): string {
+  return ['📭 *Nada recente*', '', 'Não achei lançamento para ajustar.'].join('\n');
+}
+
+export function replyLastTxDeleteFail(): string {
+  return ['⚠️ Não consegui apagar.', '', 'Tente de novo em instantes.'].join('\n');
+}
+
+export function replyLastTxDeleted(): string {
+  return ['🗑️ *Apagado*', '', 'Último lançamento removido.'].join('\n');
+}
+
+export function replyLastTxAmountFail(): string {
+  return ['⚠️ Não consegui atualizar o valor.'].join('\n');
+}
+
+export function replyLastTxAmountNeedsValue(): string {
+  return [
+    '✏️ *Falta o valor*',
+    '',
+    'Ex.: *corrige o último para 59,90* ou *corrige o último, 59,90*',
+  ].join('\n');
+}
+
+export function replyLastTxAmountUpdated(amount: Decimal): string {
+  const br = amount.toFixed(2).replace('.', ',');
+  return ['✅ *Valor atualizado*', '', `*${br}* BRL`].join('\n');
+}
+
+export function replyLastTxCategoryNotFound(): string {
+  return [
+    '🏷️ *Categoria não encontrada*',
+    '',
+    'Use um nome parecido com as categorias padrão.',
+    '💡 *quais categorias* — ver lista',
+  ].join('\n');
+}
+
+export function replyLastTxCategoryUpdateFail(): string {
+  return ['⚠️ Não consegui mudar a categoria.'].join('\n');
+}
+
+export function replyLastTxCategoryUpdated(categoryName: string): string {
+  return ['✅ *Categoria atualizada*', '', `*${categoryName}*`].join('\n');
 }

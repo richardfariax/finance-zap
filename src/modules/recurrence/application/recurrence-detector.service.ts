@@ -1,7 +1,7 @@
 import { addDays, differenceInCalendarDays } from 'date-fns';
 import { Decimal } from 'decimal.js';
 import type { Prisma } from '@prisma/client';
-import { RecurringFrequency } from '@prisma/client';
+import { RecurringFrequency } from '../../../shared/types/prisma-enums.js';
 import { prisma } from '../../../shared/infra/prisma.js';
 import { createHash } from 'node:crypto';
 

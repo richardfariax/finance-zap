@@ -1,5 +1,6 @@
 import 'dotenv/config';
-import { PrismaClient, CategoryKind } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
+import { CategoryKind } from '../src/shared/types/prisma-enums.js';
 import { v4 as uuidv4 } from 'uuid';
 import { normalizeForMatch } from '../src/shared/utils/normalize-text.js';
 

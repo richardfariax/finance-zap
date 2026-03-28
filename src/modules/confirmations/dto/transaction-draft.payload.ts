@@ -1,4 +1,4 @@
-import { TransactionType } from '@prisma/client';
+import { TransactionType } from '../../../shared/types/prisma-enums.js';
 import { z } from 'zod';
 
 export const TransactionDraftPayloadSchema = z.object({

@@ -2,7 +2,7 @@ import { readFile, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
-import { ConfidenceLevel } from '@prisma/client';
+import { ConfidenceLevel } from '../../../shared/types/prisma-enums.js';
 import { env } from '../../../config/env.js';
 import type {
   TranscriptionProvider,

@@ -1,4 +1,4 @@
-import type { ConfidenceLevel } from '@prisma/client';
+import type { ConfidenceLevel } from '../../../shared/types/prisma-enums.js';
 
 export interface TranscriptionResult {
   text: string;

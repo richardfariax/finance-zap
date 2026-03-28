@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { MessageDirection, MessageProvider, MessageType } from '@prisma/client';
+import { MessageDirection, MessageProvider, MessageType } from '../../shared/types/prisma-enums.js';
 import { env } from '../../config/env.js';
 import { waChatJidFromDigits } from '../../shared/utils/whatsapp-jid.js';
 import type { AppWiring } from '../wiring.js';
