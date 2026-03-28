@@ -74,7 +74,10 @@ export class BaileysService {
   }
 
   getOutbound(): OutboundMessagesPort {
-    return new BaileysOutboundAdapter(() => this.sock, () => this.isSendReady());
+    return new BaileysOutboundAdapter(
+      () => this.sock,
+      () => this.isSendReady(),
+    );
   }
 
   getSocket(): WASocket | null {
@@ -89,10 +92,10 @@ export class BaileysService {
     if (!this.isSendReady()) {
       throw new Error('WhatsApp não conectado');
     }
-    await new BaileysOutboundAdapter(() => this.sock, () => this.isSendReady()).sendText(
-      toJid,
-      text,
-    );
+    await new BaileysOutboundAdapter(
+      () => this.sock,
+      () => this.isSendReady(),
+    ).sendText(toJid, text);
   }
 
   async start(): Promise<void> {
