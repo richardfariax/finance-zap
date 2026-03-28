@@ -6,12 +6,7 @@ import type { OcrProvider, OcrResult } from '../domain/ocr-provider.js';
 
 export class TesseractOcrProvider implements OcrProvider {
   async extractText(imagePath: string): Promise<OcrResult> {
-    const buffer = await sharp(imagePath)
-      .greyscale()
-      .normalize()
-      .sharpen()
-      .png()
-      .toBuffer();
+    const buffer = await sharp(imagePath).greyscale().normalize().sharpen().png().toBuffer();
 
     const worker = await createWorker(env.TESSERACT_LANG);
     const {
@@ -21,7 +16,11 @@ export class TesseractOcrProvider implements OcrProvider {
 
     const trimmed = text.replace(/\s+/g, ' ').trim();
     const conf =
-      confidence >= 70 ? ConfidenceLevel.HIGH : confidence >= 45 ? ConfidenceLevel.MEDIUM : ConfidenceLevel.LOW;
+      confidence >= 70
+        ? ConfidenceLevel.HIGH
+        : confidence >= 45
+          ? ConfidenceLevel.MEDIUM
+          : ConfidenceLevel.LOW;
 
     return { text: trimmed, confidence: conf };
   }

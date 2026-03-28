@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { MessageDirection, MessageProvider, MessageType } from '@prisma/client';
 import { env } from '../../config/env.js';
+import { waChatJidFromDigits } from '../../shared/utils/whatsapp-jid.js';
 import type { AppWiring } from '../wiring.js';
 import { TesseractOcrProvider } from '../../modules/media/infra/tesseract-ocr.provider.js';
 import { WhisperCliTranscriptionProvider } from '../../modules/media/infra/whisper-cli.transcription.provider.js';
@@ -31,7 +32,7 @@ export function registerDevRoutes(app: FastifyInstance, wiring: AppWiring): void
       providerMessageId: `dev-${String(Date.now())}-${Math.random().toString(36).slice(2)}`,
       direction: MessageDirection.INBOUND,
       messageType: MessageType.TEXT,
-      fromWhatsAppNumber: digits,
+      waChatJid: waChatJidFromDigits(digits),
       rawText: body.data.text,
       receivedAt: new Date(),
     });

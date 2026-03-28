@@ -12,14 +12,21 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev",
-    "prisma:seed": "prisma db seed"
+    "typecheck": "tsc --noEmit",
+    "setup:env": "node scripts/ensure-env.mjs",
+    "setup:audio": "node scripts/ensure-env.mjs && node scripts/setup-audio.mjs",
+    "prisma:generate": "node scripts/ensure-env.mjs && dotenv -e .env -- prisma generate",
+    "prisma:migrate": "node scripts/ensure-env.mjs && dotenv -e .env -- prisma migrate dev",
+    "prisma:migrate:deploy": "node scripts/ensure-env.mjs && dotenv -e .env -- prisma migrate deploy",
+    "prisma:seed": "node scripts/ensure-env.mjs && dotenv -e .env -- prisma db seed",
+    "db:up": "docker compose up -d",
+    "db:ready": "node scripts/wait-for-postgres.mjs",
+    "bootstrap": "yarn setup:env && yarn db:up && yarn db:ready && yarn prisma:generate && yarn prisma:migrate:deploy && yarn prisma:seed"
   },
   "engines": {
     "node": ">=20"
   },
-  "packageManager": "pnpm@9.15.0",
+  "packageManager": "yarn@1.22.22",
   "dependencies": {
     "@fastify/sensible": "^6.0.3",
     "@prisma/client": "^6.5.0",
@@ -41,6 +48,7 @@
     "@eslint/js": "^9.21.0",
     "@types/node": "^22.13.10",
     "@types/qrcode-terminal": "^0.12.2",
+    "dotenv-cli": "^11.0.0",
     "eslint": "^9.21.0",
     "prettier": "^3.5.3",
     "prisma": "^6.5.0",

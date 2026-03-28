@@ -68,14 +68,13 @@ export class RecurrenceDetectorService {
 
     for (const [fp, list] of groups) {
       if (list.length < 2) continue;
-      const ref = list[list.length - 1]!;
+      const ref = list.at(-1);
+      if (ref === undefined) continue;
       const amounts = list.map((x) => new Decimal(x.amount.toString()));
       const allSimilar = amounts.every((a) => amountsSimilar(a, amounts[0] ?? a));
       if (!allSimilar) continue;
       const freq = detectFrequency(list.map((l) => l.occurredAt));
-      const estimated = amounts
-        .reduce((s, a) => s.plus(a), new Decimal(0))
-        .div(amounts.length);
+      const estimated = amounts.reduce((s, a) => s.plus(a), new Decimal(0)).div(amounts.length);
 
       await prisma.recurringPattern.upsert({
         where: { userId_fingerprint: { userId, fingerprint: fp } },

@@ -14,7 +14,9 @@ export class TransactionRepository {
     return prisma.transaction.create({ data });
   }
 
-  async findLastForUser(userId: string): Promise<(Transaction & { category: Category | null }) | null> {
+  async findLastForUser(
+    userId: string,
+  ): Promise<(Transaction & { category: Category | null }) | null> {
     return prisma.transaction.findFirst({
       where: { userId, deletedAt: null },
       orderBy: { createdAt: 'desc' },

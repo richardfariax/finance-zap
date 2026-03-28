@@ -21,7 +21,12 @@ describe('ReportsService', () => {
     } as unknown as CategoryRepository;
 
     const svc = new ReportsService(transactions, categories);
-    const summary = await svc.monthlySummary('user-1', 'America/Sao_Paulo', new Date('2025-03-15T12:00:00.000Z'), 0);
+    const summary = await svc.monthlySummary(
+      'user-1',
+      'America/Sao_Paulo',
+      new Date('2025-03-15T12:00:00.000Z'),
+      0,
+    );
     expect(summary.income.toString()).toBe('3000');
     expect(summary.expense.toString()).toBe('1200');
     expect(summary.balance.toString()).toBe('1800');

@@ -27,6 +27,21 @@ async function main(): Promise<void> {
   const wiring = buildWiring(logger);
   const app = await buildHttpApp(wiring);
 
+  if (!env.WHISPER_CLI_PATH?.trim() || !env.WHISPER_MODEL_PATH?.trim()) {
+    logger.warn(
+      'Áudio: configure WHISPER_CLI_PATH e WHISPER_MODEL_PATH no .env para transcrever voz (whisper.cpp + modelo). Veja README.',
+    );
+  } else {
+    logger.info(
+      {
+        whisperCli: env.WHISPER_CLI_PATH,
+        whisperModel: env.WHISPER_MODEL_PATH,
+        whisperLang: env.WHISPER_LANG,
+      },
+      'Transcrição de áudio habilitada (whisper.cpp)',
+    );
+  }
+
   await wiring.baileys.start();
 
   await app.listen({ port: env.PORT, host: '0.0.0.0' });
@@ -34,7 +49,7 @@ async function main(): Promise<void> {
 
   for (const sig of ['SIGINT', 'SIGTERM'] as const) {
     process.on(sig, () => {
-      void shutdown(sig);
+      shutdown(sig);
     });
   }
 }

@@ -28,9 +28,7 @@ export class CreateTransactionUseCase {
   }) {
     const tx = await this.transactions.create({
       user: { connect: { id: input.userId } },
-      ...(input.sourceMessageId
-        ? { message: { connect: { id: input.sourceMessageId } } }
-        : {}),
+      ...(input.sourceMessageId ? { message: { connect: { id: input.sourceMessageId } } } : {}),
       type: input.type,
       amount: input.amount.toString(),
       currency: input.currency,

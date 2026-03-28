@@ -8,7 +8,8 @@ export interface NormalizedIngestMessage {
   providerMessageId: string;
   direction: IngestDirection;
   messageType: MessageType;
-  fromWhatsAppNumber: string;
+  /** JID completo para `sendMessage` (ex.: 5511999...@s.whatsapp.net ou ...@lid) */
+  waChatJid: string;
   rawText: string | null;
   receivedAt: Date;
   mediaDownloadKey?: string;

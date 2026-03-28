@@ -27,17 +27,14 @@ export function parseLastTransactionCommand(raw: string): LastTxCommand {
     return { kind: 'DELETE_LAST' };
   }
 
-  if (
-    /\b(apaga|apagar|deleta|deletar)\b/.test(n) &&
-    /\b(ultimo|último)\b/.test(n)
-  ) {
+  if (/\b(apaga|apagar|deleta|deletar)\b/.test(n) && /\b(ultimo|último)\b/.test(n)) {
     return { kind: 'DELETE_LAST' };
   }
 
   if (
     /\b(corrige|corrigir|muda|mudar|altera|alterar|atualiza|atualizar)\b/.test(n) &&
     /\b(ultimo|último)\b/.test(n) &&
-    /\b(valor|preco|preço)\b/.test(n)
+    /\b(valor|preco|preço|lancamento|lançamento)\b/.test(n)
   ) {
     const amount = extractMoneyToken(raw);
     if (amount) return { kind: 'UPDATE_LAST_AMOUNT', amount };
@@ -48,16 +45,15 @@ export function parseLastTransactionCommand(raw: string): LastTxCommand {
     /\b(ultimo|último)\b/.test(n) &&
     /\b(categoria)\b/.test(n)
   ) {
-    const cleaned = raw.replace(/\b(corrige|corrigir|muda|mudar|altera|alterar|ultimo|último|categoria|para|pra)\b/giu, ' ');
+    const cleaned = raw.replace(
+      /\b(corrige|corrigir|muda|mudar|altera|alterar|ultimo|último|categoria|para|pra)\b/giu,
+      ' ',
+    );
     const hint = cleaned.replace(/[^\p{L}\p{N}\s-]/gu, ' ').trim();
     if (hint.length >= 2) return { kind: 'UPDATE_LAST_CATEGORY', categoryHint: hint };
   }
 
-  if (
-    /\b(muda|mudar)\b/.test(n) &&
-    /\b(categoria)\b/.test(n) &&
-    /\b(para|pra)\b/.test(n)
-  ) {
+  if (/\b(muda|mudar)\b/.test(n) && /\b(categoria)\b/.test(n) && /\b(para|pra)\b/.test(n)) {
     const parts = raw.split(/\b(para|pra)\b/i);
     const hint = (parts[1] ?? '').trim();
     if (hint.length >= 2) return { kind: 'UPDATE_LAST_CATEGORY', categoryHint: hint };

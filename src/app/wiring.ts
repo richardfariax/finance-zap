@@ -38,12 +38,12 @@ export function buildWiring(logger?: Logger): AppWiring {
   const baileysHolder: { service: BaileysService | null } = { service: null };
 
   const outbound: OutboundMessagesPort = {
-    async sendText(digits: string, text: string): Promise<void> {
+    async sendText(toJid: string, text: string): Promise<void> {
       const svc = baileysHolder.service;
       if (!svc) {
         throw new Error('WhatsApp ainda não inicializado');
       }
-      await svc.sendText(digits, text);
+      await svc.sendText(toJid, text);
     },
   };
 
@@ -59,6 +59,7 @@ export function buildWiring(logger?: Logger): AppWiring {
     recurrence,
     audit,
     outbound,
+    logger,
   );
 
   const baileys = new BaileysService(ingest, logger);

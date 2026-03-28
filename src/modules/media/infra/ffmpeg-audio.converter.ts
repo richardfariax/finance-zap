@@ -10,18 +10,7 @@ export class FfmpegAudioConverter {
   async toWav16kMono(inputPath: string): Promise<string> {
     const dir = await mkdtemp(join(tmpdir(), 'finance-zap-audio-'));
     const out = join(dir, 'out.wav');
-    await this.run([
-      '-y',
-      '-i',
-      inputPath,
-      '-ac',
-      '1',
-      '-ar',
-      '16000',
-      '-f',
-      'wav',
-      out,
-    ]);
+    await this.run(['-y', '-i', inputPath, '-ac', '1', '-ar', '16000', '-f', 'wav', out]);
     return out;
   }
 

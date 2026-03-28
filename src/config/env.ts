@@ -6,9 +6,7 @@ dotenvConfig();
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().positive().default(3000),
-  LOG_LEVEL: z
-    .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
-    .default('info'),
+  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   DATABASE_URL: z
     .string()
     .min(1)
@@ -20,6 +18,13 @@ const envSchema = z.object({
   TESSERACT_LANG: z.string().min(1).default('por+eng'),
   WHISPER_CLI_PATH: z.string().optional(),
   WHISPER_MODEL_PATH: z.string().optional(),
+  /** Idioma passado ao whisper.cpp (`-l`), ex.: pt, auto */
+  WHISPER_LANG: z.string().min(1).default('pt'),
+  /**
+   * Texto opcional passado ao whisper.cpp como `--prompt` (vocabulário / estilo esperado).
+   * Ajuda com valores em reais e verbos comuns de gasto/receita. Builds antigas sem --prompt: deixe vazio.
+   */
+  WHISPER_PROMPT: z.string().optional(),
   FFMPEG_PATH: z.string().min(1).default('ffmpeg'),
   DEFAULT_TIMEZONE: z.string().min(1).default('America/Sao_Paulo'),
   DEFAULT_LOCALE: z.string().min(1).default('pt-BR'),

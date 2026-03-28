@@ -6,4 +6,11 @@ coverage
 baileys_auth
 storage
 *.log
+yarn-error.log
 .DS_Store
+
+# Baixados/gerados por `yarn setup:audio` (mantemos só .gitkeep)
+vendor/whisper/**
+!vendor/whisper/.gitkeep
+vendor/ffmpeg/**
+!vendor/ffmpeg/.gitkeep

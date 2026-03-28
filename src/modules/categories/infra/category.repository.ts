@@ -18,7 +18,10 @@ export class CategoryRepository {
     });
   }
 
-  async findByNormalizedName(userId: string | null, normalizedName: string): Promise<Category | null> {
+  async findByNormalizedName(
+    userId: string | null,
+    normalizedName: string,
+  ): Promise<Category | null> {
     return prisma.category.findFirst({
       where: {
         normalizedName,
