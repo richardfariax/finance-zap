@@ -1,0 +1,9 @@
+node_modules
+dist
+.env
+coverage
+.wwebjs_auth
+baileys_auth
+storage
+*.log
+.DS_Store
