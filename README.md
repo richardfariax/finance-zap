@@ -91,7 +91,7 @@ Variáveis úteis (arquivo `.env` na raiz do projeto ou ambiente do shell): `POR
 
 ## Mensagens automáticas (WhatsApp)
 
-- **Primeira mensagem** da pessoa: boas-vindas com o *primeiro nome* (push name) + texto curto pedindo *doação opcional* no PIX (`DONATION_PIX_KEY` no `.env`, padrão no código).
+- **Primeira mensagem** da pessoa: boas-vindas com o *primeiro nome* (push name) e apresentação curta do bot.
 - **Todo dia, entre 00:00 e 00:44 no fuso do usuário** (`users.timezone`): resumo automático do **dia anterior** (despesas, receitas, saldo, top categorias + dica rápida).
 - **Mais de 24h sem mensagem:** um lembrete amigável para **fixar a conversa** (não repete até a pessoa voltar a falar e ficar ausente de novo).
 
