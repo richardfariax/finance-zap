@@ -57,7 +57,7 @@ Os comandos `prisma:*` carregam automaticamente o arquivo **`.env`** (via `doten
 yarn dev
 ```
 
-- API HTTP na porta definida em `PORT` (padrão **3000**).
+- API HTTP na porta definida em `PORT` (padrão **3009**).
 - Pasta `baileys_auth/` guarda a sessão do WhatsApp.
 - No terminal, aparece o **QR Code** para parear o número.
 
@@ -79,7 +79,7 @@ docker compose up --build
 
 Ou: `yarn docker:up` (mesmo efeito). Em segundo plano: `yarn docker:up:detached`. Logs do app: `yarn docker:logs`.
 
-- API: `http://localhost:3000` (porta alterável com `PORT` no host, ex.: `PORT=8080 docker compose up`).
+- API: `http://localhost:3009` (porta alterável com `PORT` no host, ex.: `PORT=8080 docker compose up`).
 - Postgres exposto em `localhost:5432` (usuário `finance`, senha `finance`, DB `finance_zap`).
 - O **QR Code** do WhatsApp aparece no terminal — use `tty: true` já definido no compose.
 
@@ -108,7 +108,7 @@ Exige migração: `yarn prisma:migrate:deploy` (novos campos em `users`).
 Com o servidor rodando (`yarn dev`), envie texto simulado:
 
 ```bash
-curl -s -X POST http://localhost:3000/dev/simulate-text \
+curl -s -X POST http://localhost:3009/dev/simulate-text \
   -H 'Content-Type: application/json' \
   -d '{"whatsappNumber":"5511999999999","text":"uber 23,50"}'
 ```
@@ -165,7 +165,7 @@ Se `WHISPER_CLI_PATH` / `WHISPER_MODEL_PATH` estiverem vazios, o servidor avisa 
 ### Testar sem WhatsApp
 
 ```bash
-curl -s -X POST http://localhost:3000/dev/simulate-transcription \
+curl -s -X POST http://localhost:3009/dev/simulate-transcription \
   -H 'Content-Type: application/json' \
   -d '{"audioPath":"/caminho/teste.wav"}'
 ```

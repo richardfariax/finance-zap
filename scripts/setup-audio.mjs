@@ -284,7 +284,7 @@ async function main() {
   console.log(`  FFMPEG_PATH=${ffmpegPath}`);
   console.log('\nTeste: yarn dev e envie um áudio no WhatsApp, ou:');
   console.log(
-    `  curl -s -X POST http://localhost:${process.env.PORT || '3000'}/dev/simulate-transcription -H 'Content-Type: application/json' -d '{"audioPath":"..."}'\n`,
+    `  curl -s -X POST http://localhost:${process.env.PORT || '3009'}/dev/simulate-transcription -H 'Content-Type: application/json' -d '{"audioPath":"..."}'\n`,
   );
 }
 
