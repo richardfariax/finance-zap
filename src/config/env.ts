@@ -23,7 +23,6 @@ const envSchema = z.object({
   FFMPEG_PATH: z.string().min(1).default('ffmpeg'),
   DEFAULT_TIMEZONE: z.string().min(1).default('America/Sao_Paulo'),
   DEFAULT_LOCALE: z.string().min(1).default('pt-BR'),
-  DONATION_PIX_KEY: z.string().min(1).default('117.286.689.99'),
 });
 
 export type AppEnv = z.infer<typeof envSchema>;

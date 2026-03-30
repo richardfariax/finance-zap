@@ -246,7 +246,7 @@ export class IngestInboundUseCase {
 
     if (user.onboardingWelcomeSentAt == null && isFirstInbound && !skipWelcomeForReset) {
       const who = firstNameFromPush(user.displayName ?? event.pushName);
-      await this.safeSend(replyJid, replyOnboardingWelcome(who, env.DONATION_PIX_KEY));
+      await this.safeSend(replyJid, replyOnboardingWelcome(who));
       await this.users.markOnboardingWelcomeSent(user.id, new Date());
     }
 
