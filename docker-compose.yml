@@ -27,10 +27,10 @@ services:
     container_name: finance-zap-app
     restart: unless-stopped
     ports:
-      - '${PORT:-3000}:3000'
+      - '${PORT:-3009}:3009'
     environment:
       NODE_ENV: production
-      PORT: 3000
+      PORT: 3009
       LOG_LEVEL: ${LOG_LEVEL:-info}
       DATABASE_URL: postgresql://finance:finance@postgres:5432/finance_zap?schema=public
       BAILEYS_AUTH_DIR: /data/baileys_auth

@@ -9,7 +9,7 @@ describe('ReportsService', () => {
   it('calcula saldo do mês a partir do aggregate', async () => {
     const transactions = {
       aggregateMonth: vi.fn(async () => [
-        { type: TransactionType.INCOME, _sum: { amount: new Prisma.Decimal('3000') } },
+        { type: TransactionType.INCOME, _sum: { amount: new Prisma.Decimal('3009') } },
         { type: TransactionType.EXPENSE, _sum: { amount: new Prisma.Decimal('1200') } },
       ]),
       groupByCategoryMonth: vi.fn(async () => []),
@@ -28,7 +28,7 @@ describe('ReportsService', () => {
       new Date('2025-03-15T12:00:00.000Z'),
       0,
     );
-    expect(summary.income.toString()).toBe('3000');
+    expect(summary.income.toString()).toBe('3009');
     expect(summary.expense.toString()).toBe('1200');
     expect(summary.balance.toString()).toBe('1800');
   });
