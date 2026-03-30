@@ -40,7 +40,6 @@ services:
       TESSERACT_LANG: ${TESSERACT_LANG:-por+eng}
       WHISPER_LANG: ${WHISPER_LANG:-pt}
       WHISPER_PROMPT: ${WHISPER_PROMPT:-}
-      DONATION_PIX_KEY: ${DONATION_PIX_KEY:-117.286.689.99}
       RUN_SEED: ${RUN_SEED:-true}
     depends_on:
       postgres:

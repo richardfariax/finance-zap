@@ -525,14 +525,13 @@ export function firstNameFromPush(pushName: string | null | undefined): string {
   return titleCasePt(clean.toLowerCase());
 }
 
-export function replyOnboardingWelcome(displayName: string, pixKey: string): string {
+export function replyOnboardingWelcome(displayName: string): string {
   return [
     `Olá, *${displayName}*! 👋✨`,
     '',
     'Sou o *Finance Zap* — anoto seus gastos e receitas aqui.',
     '',
-    '💝 Tudo *grátis*. Se quiser ajudar o projeto, *qualquer valor* no PIX:',
-    `🔑 \`${pixKey}\``,
+    '💝 Tudo *grátis*.',
     '',
     '_Manda um lançamento quando quiser._ 📲',
   ].join('\n');
