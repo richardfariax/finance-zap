@@ -79,6 +79,6 @@ COPY --from=build /app/src/shared ./src/shared
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-EXPOSE 3000
+EXPOSE 3009
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["node", "dist/app/server.js"]
