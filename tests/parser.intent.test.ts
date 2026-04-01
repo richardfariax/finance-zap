@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FinancialParserService } from '../src/modules/parser/application/financial-parser.service.js';
+import { TRANSACTION_TYPE_CHOICE_PHRASE } from '../src/modules/whatsapp/presentation/bot-replies.js';
 import { UserIntent, ParseStatus } from '../src/shared/types/intent.js';
 import type { Category, Rule } from '@prisma/client';
 import { CategoryKind, ConfidenceLevel } from '../src/shared/types/prisma-enums.js';
@@ -94,7 +95,7 @@ describe('FinancialParserService', () => {
   it('pede clarificação para nome + valor ambíguo', () => {
     const r = parseText('fulano 50');
     expect(r.status).toBe(ParseStatus.NEEDS_CONFIRMATION);
-    expect(r.clarification).toContain('despesa');
+    expect(r.clarification).toContain(TRANSACTION_TYPE_CHOICE_PHRASE);
   });
 
   it('"resumo" sem período pede esclarecimento de período', () => {
@@ -119,6 +120,23 @@ describe('FinancialParserService', () => {
 
   it('reconhece levantamento do dia (hoje)', () => {
     const r = parseText('quanto gastei hoje?');
+    expect(r.intent).toBe(UserIntent.GET_TODAY_SUMMARY);
+  });
+
+  it('"o que gastei hoje?" é resumo do dia (não pede valor)', () => {
+    const r = parseText('o que gastei hoje?');
+    expect(r.intent).toBe(UserIntent.GET_TODAY_SUMMARY);
+    expect(r.status).toBe(ParseStatus.OK);
+  });
+
+  it('"onde gastei mais?" é breakdown por categoria do mês', () => {
+    const r = parseText('onde gastei mais?');
+    expect(r.intent).toBe(UserIntent.GET_CATEGORY_BREAKDOWN);
+    expect(r.status).toBe(ParseStatus.OK);
+  });
+
+  it('"onde gastei mais hoje?" é resumo do dia', () => {
+    const r = parseText('onde gastei mais hoje?');
     expect(r.intent).toBe(UserIntent.GET_TODAY_SUMMARY);
   });
 

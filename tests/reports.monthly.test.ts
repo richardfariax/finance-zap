@@ -30,6 +30,6 @@ describe('ReportsService', () => {
     );
     expect(summary.income.toString()).toBe('3009');
     expect(summary.expense.toString()).toBe('1200');
-    expect(summary.balance.toString()).toBe('1800');
+    expect(summary.balance.toString()).toBe('1809');
   });
 });

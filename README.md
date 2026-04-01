@@ -1,14 +1,65 @@
 # Finance Zap
 
-Bot de controle financeiro via **WhatsApp** (Baileys), com API **Fastify**, **PostgreSQL** + **Prisma**, parser heurístico, OCR (Tesseract), transcrição opcional (whisper.cpp), relatórios e arquitetura em camadas.
+Bot de controle financeiro pelo **WhatsApp** (Baileys), com API **Fastify**, **PostgreSQL** + **Prisma**, parser heurístico em português, **OCR** (Tesseract), **transcrição opcional** (whisper.cpp), relatórios e arquitetura em camadas.
+
+## Para quem é
+
+Pessoas que querem anotar **gastos** e **receitas**, além de **agenda e lembretes** com data e hora, em linguagem natural, sem abrir planilha. O bot confirma o que entendeu, pede esclarecimento quando precisa e usa mensagens curtas e padronizadas no WhatsApp.
+
+## O que o usuário pode fazer (resumo)
+
+| Ação | Exemplo de mensagem |
+|------|---------------------|
+| Gasto | `uber 23,50`, `gastei 40 no mercado` |
+| Receita | `recebi 1200`, `recebi 80 de fulano` |
+| Vários de uma vez | `uber 10, mercado 40` (separados por vírgula) |
+| Resumo | `resumo` → o bot pergunta *hoje* ou *mês* |
+| Ajuda | `ajuda` |
+| Corrigir último valor | `corrige o último para 59,90` |
+| Apagar último | `apaga o último lançamento` |
+| Apagar tudo (conta) | `apagar todos os dados` (irreversível) |
+| Lembrete / compromisso | `amanhã às 14h reunião com Ana`, `dia 10 pagar aluguel`, `daqui 30 minutos ligar para o cliente` |
+| Listar agenda | `agenda`, `agenda de hoje`, `meus lembretes`, `próximos compromissos` |
+| Cancelar lembrete | `cancelar lembrete do aluguel`, `cancelar aluguel` |
+| Concluir | `marcar como feito …`, `paguei a conta de luz` (quando bater com título salvo) |
+| Remarcar | `remarcar reunião de amanhã para 15h` (precisa de horário reconhecível) |
+
+Mensagens automáticas (após migrações e com campos em `users`):
+
+- **Primeira mensagem:** boas-vindas com o primeiro nome.
+- **Todo dia entre 00:00 e 00:44** (fuso `users.timezone`): resumo de **ontem**.
+- **Mais de 24 h sem falar:** lembrete para **fixar o chat** (não repete até a pessoa voltar e sumir de novo).
+
+## Arquitetura (visão rápida)
+
+1. **WhatsApp (Baileys)** recebe texto, áudio ou imagem → `IngestInboundUseCase`.
+2. **Mídia:** áudio → transcrição; imagem → OCR (quando aplicável).
+3. **Parser** (`FinancialParserService`) classifica intenção e extrai valor, tipo e categoria sugerida.
+4. **Confirmações pendentes** (`PendingConfirmationRepository`) guardam contexto (tipo de movimentação, categoria incerta, período do resumo, transcrição de áudio).
+5. **Transações** gravadas com auditoria e detecção de recorrência.
+6. **Agenda / lembretes** (`src/modules/reminders/`): parser em PT-BR (`reminder-nl-parser.ts`), persistência (`UserReminder`, `ReminderDelivery` no Prisma), orquestração (`RemindersAppService`), copy em `reminder-messages.ts`.
+7. **Disparo**: `ReminderSchedulerService` (`src/modules/notifications/application/reminder-scheduler.service.ts`) roda a cada minuto, busca lembretes ativos com `notifyAt` no intervalo (com lookback para tolerar atrasos), **deduplica** com `ReminderDelivery` (`@@unique([reminderId, slotAt])`), envia WhatsApp e marca como concluído (evento único) ou recalcula `eventAt`/`notifyAt` (recorrência).
+
+**Fuso e regras de negócio (lembretes)**
+
+- Cada lembrete guarda o **timezone** do usuário no momento da criação (alinhado a `users.timezone`).
+- Compromisso **com hora**: aviso padrão **15 minutos antes** (`REMINDER_EARLY_MINUTES`).
+- Só **data** (dia inteiro): notificação no início do dia local, na hora padrão `REMINDER_DEFAULT_DAY_HOUR` (padrão 9h).
+- Recorrência simples: **todo dia** (com hora), **toda semana** (mesmo dia da semana + hora, quando a frase pedir), **todo mês dia N**.
+
+**Integração com o fluxo financeiro**
+
+No `IngestInboundUseCase`, após comandos do último lançamento e bloqueio “só número”, o texto é tentado primeiro no **módulo de lembretes**; se não for agenda, segue o parser financeiro. Frases claramente monetárias (`gastei 50`, `recebi 100`, etc.) são ignoradas pelo parser de lembretes.
+
+Copy voltado ao usuário final fica centralizado em `src/modules/whatsapp/presentation/bot-replies.ts`. A frase `TRANSACTION_TYPE_CHOICE_PHRASE` alinha a mensagem de “despesa / receita / transferência” com o roteamento do ingest (evita divergência entre texto e lógica).
 
 ## Requisitos
 
-- Node.js **20+**
-- **Yarn** **1.22** (recomendado via Corepack: `corepack enable` — o campo `packageManager` no `package.json` fixa a versão)
-- **Docker** (para PostgreSQL)
-- **ffmpeg** no PATH (para conversão de áudio recebido pelo WhatsApp)
-- Opcional: binário **whisper.cpp** + modelo (transcrição local)
+- **Node.js 20+**
+- **Yarn 1.22** (recomendado: `corepack enable` — `packageManager` no `package.json` fixa a versão)
+- **Docker** (PostgreSQL; opcionalmente app completo)
+- **ffmpeg** no PATH (áudio do WhatsApp)
+- Opcional: **whisper.cpp** + modelo (transcrição local)
 
 ## Instalação
 
@@ -16,23 +67,25 @@ Bot de controle financeiro via **WhatsApp** (Baileys), com API **Fastify**, **Po
 yarn install
 ```
 
-Transcrição de voz (opcional, tudo em `vendor/` + entradas no `.env`):
+Criar `.env` (ou deixar o script criar a partir do exemplo):
+
+```bash
+yarn setup:env
+```
+
+Ajuste `DATABASE_URL` se necessário (padrão aponta para o Postgres do `docker-compose`).
+
+### Transcrição de voz (opcional)
 
 ```bash
 yarn setup:audio
 ```
 
-Na primeira vez, crie o `.env` (ou deixe o script fazer isso):
+Coloca binários/modelo em `vendor/` (gitignored, exceto `.gitkeep`). Ver secção mais abaixo.
 
-```bash
-yarn setup:env   # copia .env.example → .env se .env não existir
-```
+## Banco de dados
 
-Ajuste `DATABASE_URL` se necessário (o padrão aponta para o Postgres do `docker-compose`).
-
-## Banco de dados (Docker + migrations + seed)
-
-**Tudo de uma vez** (sobe Postgres, espera a porta, gera client, aplica migrações, seed):
+**Tudo de uma vez** (Postgres, espera porta, Prisma generate, migrate deploy, seed):
 
 ```bash
 yarn bootstrap
@@ -41,15 +94,14 @@ yarn bootstrap
 **Passo a passo:**
 
 ```bash
-docker compose up -d
-yarn db:ready              # opcional: espera localhost:5432
-yarn prisma:migrate        # desenvolvimento (interativo)
-# ou, sem prompts (CI / primeira subida com migrações já versionadas):
-yarn prisma:migrate:deploy
+docker compose up -d postgres
+yarn db:ready
+yarn prisma:migrate
+# ou CI / deploy: yarn prisma:migrate:deploy
 yarn prisma:seed
 ```
 
-Os comandos `prisma:*` carregam automaticamente o arquivo **`.env`** (via `dotenv-cli`) e criam `.env` a partir do exemplo se ainda não existir.
+Comandos `prisma:*` carregam `.env` via `dotenv-cli`.
 
 ## Executar em desenvolvimento
 
@@ -57,63 +109,54 @@ Os comandos `prisma:*` carregam automaticamente o arquivo **`.env`** (via `doten
 yarn dev
 ```
 
-- API HTTP na porta definida em `PORT` (padrão **3009**).
-- Pasta `baileys_auth/` guarda a sessão do WhatsApp.
-- No terminal, aparece o **QR Code** para parear o número.
+- API HTTP na porta **`PORT`** (padrão **3009**).
+- Sessão WhatsApp em `BAILEYS_AUTH_DIR` (padrão `./baileys_auth`).
+- **QR Code** no terminal para parear o número.
 
 ## Docker Compose (app + Postgres + áudio + OCR)
 
-Sobe **PostgreSQL**, a **API** e deixa pronto:
-
-- **ffmpeg** (conversão de áudio para WAV 16 kHz)
-- **whisper.cpp** compilado na imagem + modelo **ggml-base.bin** (troque com build-arg `WHISPER_MODEL_FILE`)
-- **Tesseract** (`por` + `eng`) para OCR no sistema; o código usa também **tesseract.js**
-- **Migrações** (`prisma migrate deploy`) e **seed** de categorias na subida
-- Volumes nomeados para **sessão Baileys** e **mídia** (não perdem ao recriar o container)
-
-**Requisito:** Docker + Docker Compose v2.
+Sobe Postgres, API, ffmpeg, whisper na imagem, Tesseract, migrações e seed.
 
 ```bash
 docker compose up --build
+# ou: yarn docker:up  |  segundo plano: yarn docker:up:detached
 ```
 
-Ou: `yarn docker:up` (mesmo efeito). Em segundo plano: `yarn docker:up:detached`. Logs do app: `yarn docker:logs`.
+- API: `http://localhost:3009` (porta do host alterável com `PORT`).
+- Postgres: `localhost:5432` (usuário `finance`, senha `finance`, DB `finance_zap`).
+- **QR Code** no terminal (`tty: true` no compose).
 
-- API: `http://localhost:3009` (porta alterável com `PORT` no host, ex.: `PORT=8080 docker compose up`).
-- Postgres exposto em `localhost:5432` (usuário `finance`, senha `finance`, DB `finance_zap`).
-- O **QR Code** do WhatsApp aparece no terminal — use `tty: true` já definido no compose.
+Variáveis úteis: `PORT`, `LOG_LEVEL`, `DEFAULT_TIMEZONE`, `WHISPER_LANG`, `WHISPER_PROMPT`, `RUN_SEED`, `WHISPER_MODEL_FILE` (build-arg). **Apple Silicon:** o serviço `app` pode usar `platform: linux/amd64` para build estável do whisper (primeira build mais lenta).
 
-Variáveis úteis (arquivo `.env` na raiz do projeto ou ambiente do shell): `PORT`, `LOG_LEVEL`, `DEFAULT_TIMEZONE`, `WHISPER_LANG`, `WHISPER_PROMPT`, `RUN_SEED` (`false` para pular o seed após a primeira vez), `WHISPER_MODEL_FILE` (só no **build**, ex.: `ggml-small.bin`).
+**Só o banco** (app local com `yarn dev`): `docker compose up postgres -d`.
 
-**Só o banco** (desenvolvimento local com `yarn dev`): `docker compose up postgres -d`.
+## Variáveis de ambiente (principais)
 
-**Nota:** a primeira build compila o whisper.cpp e pode levar vários minutos. Imagem final fica maior por causa do modelo GGML. Em **Mac Apple Silicon** o serviço `app` usa `platform: linux/amd64` para a compilação do whisper ser estável (pode ser mais lento na primeira build por emulação).
+| Variável | Descrição |
+|----------|-----------|
+| `PORT` | Porta HTTP da API |
+| `DATABASE_URL` | Postgres (Prisma) |
+| `BAILEYS_AUTH_DIR` | Pasta da sessão Baileys |
+| `MEDIA_STORAGE_DIR` | Arquivos de mídia recebidos |
+| `DEFAULT_TIMEZONE` | Fuso padrão de novos usuários / relatórios |
+| `DEFAULT_LOCALE` | Locale (pt-BR) |
+| `TESSERACT_LANG` | Idiomas OCR (ex.: `por+eng`) |
+| `WHISPER_CLI_PATH` / `WHISPER_MODEL_PATH` | Transcrição local |
+| `FFMPEG_PATH` | Conversão de áudio |
+| `REMINDER_DEFAULT_DAY_HOUR` | Hora local (0–23) para lembretes só com data |
+| `REMINDER_EARLY_MINUTES` | Antecedência padrão para compromissos com hora (minutos) |
 
-## Mensagens automáticas (WhatsApp)
+Lista completa no `.env.example`.
 
-- **Primeira mensagem** da pessoa: boas-vindas com o *primeiro nome* (push name) e apresentação curta do bot.
-- **Todo dia, entre 00:00 e 00:44 no fuso do usuário** (`users.timezone`): resumo automático do **dia anterior** (despesas, receitas, saldo, top categorias + dica rápida).
-- **Mais de 24h sem mensagem:** um lembrete amigável para **fixar a conversa** (não repete até a pessoa voltar a falar e ficar ausente de novo).
+## Testar sem celular (desenvolvimento)
 
-Exige migração: `yarn prisma:migrate:deploy` (novos campos em `users`).
-
-## Autenticação Baileys
-
-1. Rode `yarn dev`.
-2. Escaneie o QR exibido no terminal com o WhatsApp (Aparelhos conectados).
-3. Após conectado, a sessão fica em `BAILEYS_AUTH_DIR` (padrão `./baileys_auth`).
-
-## Testar mensagens sem celular (dev)
-
-Com o servidor rodando (`yarn dev`), envie texto simulado:
+Com `yarn dev` rodando:
 
 ```bash
 curl -s -X POST http://localhost:3009/dev/simulate-text \
   -H 'Content-Type: application/json' \
   -d '{"whatsappNumber":"5511999999999","text":"uber 23,50"}'
 ```
-
-Rotas úteis:
 
 | Método | Rota | Descrição |
 |--------|------|-----------|
@@ -124,51 +167,44 @@ Rotas úteis:
 | GET | `/transactions/latest?whatsappNumber=...` | Últimos lançamentos |
 | POST | `/dev/simulate-text` | Simula mensagem de texto |
 | POST | `/dev/simulate-ocr` | `{ "imagePath": "/caminho/arquivo.jpg" }` |
+| POST | `/dev/interpret-receipt` | `{ "text": "…texto do OCR…" }` → JSON estruturado do comprovante |
 | POST | `/dev/simulate-transcription` | `{ "audioPath": "/caminho/arquivo.wav" }` |
+| GET | `/dev/reminders?whatsappNumber=…` | Lista lembretes ativos do usuário (JSON) |
+| POST | `/dev/reminders/tick` | Executa um ciclo do scheduler (retorna `{ processed: n }`) |
 
 Em **produção**, rotas `/dev/*` não são registradas.
 
-## OCR (Tesseract)
+Para testar lembretes por texto (mesmo fluxo do WhatsApp):
 
-- Implementação: `TesseractOcrProvider` (`tesseract.js` + pré-processamento com **sharp**).
-- Idiomas: variável `TESSERACT_LANG` (ex.: `por+eng`).
-- Cupons e prints com baixa qualidade podem exigir ajuste de imagem ou idiomas extras.
+```bash
+curl -s -X POST http://localhost:3009/dev/simulate-text \
+  -H 'Content-Type: application/json' \
+  -d '{"whatsappNumber":"5511999999999","text":"amanhã às 14h reunião com Ana"}'
+```
 
-## Transcrição de áudio (automática no repositório)
+## Autenticação Baileys
 
-Tudo fica em `vendor/` (ignorado pelo Git, exceto `.gitkeep`). Um comando prepara modelo GGML, binário `whisper-cli` e (no **macOS**, se não existir `ffmpeg` no PATH) um **ffmpeg** estático.
+1. `yarn dev`
+2. Escanear o QR com WhatsApp → Aparelhos conectados
+3. Sessão persistida em `BAILEYS_AUTH_DIR`
 
-**Requisitos extras:**
+## OCR
 
-- **macOS / Linux:** `git`, `cmake` e compilador C++ (Xcode CLT ou `build-essential`). No Apple Silicon o script habilita **Metal** no build.
-- **Windows:** `tar` (Windows 10+) ou Git Bash; o script baixa o ZIP oficial com `whisper-cli.exe` e DLLs.
+Implementação: `TesseractOcrProvider` (`tesseract.js` + **sharp**). Ajuste `TESSERACT_LANG` para cupons mistos PT/EN.
+
+### Comprovantes (cupom / NF)
+
+Após o OCR, o texto é analisado por heurísticas em `interpretBrazilianReceipt` (`src/modules/receipts/`): **valor total** (prioriza linhas com *TOTAL*, *VALOR A PAGAR*, etc.), **estabelecimento** quando legível, tipo (combustível, supermercado, restaurante, farmácia, recibo), data e categoria sugerida — **sem lista de produtos** (`itens` permanece vazio no JSON por compatibilidade). Se a confiança for **alta** ou **média** e houver valor, o bot envia um resumo e pede *sim* antes de gravar o gasto (igual ao fluxo de áudio). O JSON estruturado fica em `messages.metadata.receiptInterpretation`.
+
+## Transcrição (whisper.cpp)
+
+Setup local em `vendor/`:
 
 ```bash
 yarn setup:audio
 ```
 
-Isso:
-
-1. Garante `.env` (via `ensure-env`).
-2. Baixa `vendor/whisper/models/ggml-base.bin` (troque com `FZ_WHISPER_MODEL=ggml-small.bin` para modelo maior).
-3. **macOS/Linux:** clona `vendor/whisper/whisper.cpp`, compila e copia `vendor/whisper/bin/whisper-cli`.
-4. **Windows:** baixa o release [ggml-org/whisper.cpp](https://github.com/ggml-org/whisper.cpp) e extrai para `vendor/whisper/bin/`.
-5. **macOS sem ffmpeg no PATH:** baixa binário [evermeet.cx](https://evermeet.cx/ffmpeg/) para `vendor/ffmpeg/ffmpeg`.
-6. Atualiza `WHISPER_CLI_PATH`, `WHISPER_MODEL_PATH`, `WHISPER_LANG=pt` e `FFMPEG_PATH` no `.env`.
-
-**Dicas pós-setup:** opcionalmente defina `WHISPER_PROMPT` no `.env` (texto curto em PT; whisper.cpp repassa como `--prompt` e ajuda em valores e verbos de gasto/receita — exige binário recente). Modelo **small** ou **medium** costuma transcrever melhor que **base** em áudio ruidoso.
-
-Em **Linux**, se não houver `ffmpeg` no sistema, instale com o gerenciador de pacotes (ex.: `sudo apt install ffmpeg`) e rode `yarn setup:audio` de novo ou aponte `FFMPEG_PATH` manualmente.
-
-Se `WHISPER_CLI_PATH` / `WHISPER_MODEL_PATH` estiverem vazios, o servidor avisa no log e áudios não são transcritos.
-
-### Testar sem WhatsApp
-
-```bash
-curl -s -X POST http://localhost:3009/dev/simulate-transcription \
-  -H 'Content-Type: application/json' \
-  -d '{"audioPath":"/caminho/teste.wav"}'
-```
+Requisitos extras: `git`, `cmake`, C++ toolchain (Xcode CLT / `build-essential`). No macOS Apple Silicon o script pode habilitar Metal. **Windows:** release ZIP do whisper.cpp. **macOS sem ffmpeg no PATH:** download opcional para `vendor/ffmpeg/`.
 
 Referência: [whisper.cpp](https://github.com/ggerganov/whisper.cpp).
 
@@ -178,36 +214,37 @@ Referência: [whisper.cpp](https://github.com/ggerganov/whisper.cpp).
 yarn test
 yarn lint
 yarn format:check
-```
-
-Checagem de tipos:
-
-```bash
 yarn typecheck
 ```
 
-## Limitações atuais (MVP)
+Inclui testes de parser financeiro, **parser de lembretes** (`reminder-nl-parser`), segmentação de mensagens, comandos do último lançamento, copy estável (`TRANSACTION_TYPE_CHOICE_PHRASE`), datas amigáveis (`user-facing-date`) e agregados de relatório.
 
-- Parser baseado em regras/heurísticas (sem LLM pago); erros em frases muito ambíguas.
-- OCR depende da qualidade da imagem e do idioma.
-- Transcrição depende de whisper.cpp/ffmpeg instalados e configurados.
-- Reprocessamento de mensagem (`POST /dev/reprocess-message/:id`) ainda não implementado.
+## Troubleshooting
+
+| Problema | O que verificar |
+|----------|-----------------|
+| Bot não responde | `yarn dev` rodando, QR pareado, `outbound.canSend()` (Baileys conectado) |
+| Erro de banco | `DATABASE_URL`, Postgres no ar, `yarn prisma:migrate:deploy` |
+| Áudio não vira texto | `FFMPEG_PATH`, `WHISPER_*` no `.env`, logs no startup |
+| OCR ilegível | Qualidade da foto, `TESSERACT_LANG`, contraste |
+| Resumo automático não sai | Migrações aplicadas, `users.timezone`, janela 00:00–00:44 local |
+| Lembrete não dispara | WhatsApp conectado (`canSend`), migração `user_reminders` aplicada, `POST /dev/reminders/tick` para forçar tick em dev |
+
+## Limitações (MVP)
+
+- Parser heurístico (sem LLM pago): frases muito ambíguas exigem confirmação.
+- Agenda: recorrências avançadas (RRULE completo), fusos diferentes por lembrete e múltiplos lembretes no mesmo minuto não são o foco; deduplicação é por `(reminderId, slotAt)`.
+- Para evento **único com hora**, há **um** disparo no horário de aviso (antecipado), não um segundo “é agora” (comportamento intencional para MVP).
+- OCR e transcrição dependem de qualidade e configuração.
 - Grupos `@g.us` são ignorados.
-
-## Roadmap sugerido
-
-- Painel web e API REST completa com autenticação.
-- Exportação CSV/PDF.
-- Motor de regras avançado e aprendizado com histórico.
-- Integração com LLM local (opcional) mantendo o domínio desacoplado.
-- Migrar para o pacote `baileys` oficial quando estável.
+- Reprocessamento de mensagem por ID ainda não implementado.
 
 ## Estrutura (`src/`)
 
-- `app/` — bootstrap Fastify, wiring, rotas.
+- `app/` — Fastify, wiring, rotas.
 - `config/` — env validado (Zod).
-- `modules/*` — domínio por feature (whatsapp, messages, parser, transactions, reports, media, …).
-- `shared/` — utilitários, tipos, infra Prisma.
+- `modules/` — features: `whatsapp`, `messages`, `parser`, `transactions`, `reports`, `reminders`, `notifications`, `media`, `confirmations`, etc.
+- `shared/` — tipos, utilitários (`user-facing-date`, `normalize-text`, …), Prisma.
 
 ## Licença
 

@@ -5,6 +5,9 @@ import { CategoryRepository } from '../modules/categories/infra/category.reposit
 import { PendingConfirmationRepository } from '../modules/confirmations/infra/pending-confirmation.repository.js';
 import { IngestInboundUseCase } from '../modules/messages/application/ingest-inbound.use-case.js';
 import { ProactiveOutreachService } from '../modules/notifications/application/proactive-outreach.service.js';
+import { ReminderSchedulerService } from '../modules/notifications/application/reminder-scheduler.service.js';
+import { ReminderRepository } from '../modules/reminders/infra/reminder.repository.js';
+import { RemindersAppService } from '../modules/reminders/application/reminders.app-service.js';
 import { MessageRepository } from '../modules/messages/infra/message.repository.js';
 import { RecurrenceDetectorService } from '../modules/recurrence/application/recurrence-detector.service.js';
 import { ReportsService } from '../modules/reports/application/reports.service.js';
@@ -14,6 +17,7 @@ import { TransactionRepository } from '../modules/transactions/infra/transaction
 import { EnsureUserUseCase } from '../modules/users/application/ensure-user.use-case.js';
 import { UserRepository } from '../modules/users/infra/user.repository.js';
 import type { Logger } from 'pino';
+import { env } from '../config/env.js';
 
 export interface AppWiring {
   ingest: IngestInboundUseCase;
@@ -22,6 +26,9 @@ export interface AppWiring {
   transactions: TransactionRepository;
   users: UserRepository;
   proactive: ProactiveOutreachService;
+  reminders: RemindersAppService;
+  reminderScheduler: ReminderSchedulerService;
+  reminderRepository: ReminderRepository;
 }
 
 export function buildWiring(logger?: Logger): AppWiring {
@@ -54,6 +61,20 @@ export function buildWiring(logger?: Logger): AppWiring {
 
   const proactive = new ProactiveOutreachService(users, reports, outbound, logger);
 
+  const reminderRepository = new ReminderRepository();
+  const reminders = new RemindersAppService(
+    reminderRepository,
+    env.REMINDER_DEFAULT_DAY_HOUR,
+    env.REMINDER_EARLY_MINUTES,
+    logger,
+  );
+  const reminderScheduler = new ReminderSchedulerService(
+    users,
+    reminderRepository,
+    outbound,
+    logger,
+  );
+
   const ingest = new IngestInboundUseCase(
     ensureUser,
     users,
@@ -67,11 +88,22 @@ export function buildWiring(logger?: Logger): AppWiring {
     recurrence,
     audit,
     outbound,
+    reminders,
     logger,
   );
 
   const baileys = new BaileysService(ingest, logger);
   baileysHolder.service = baileys;
 
-  return { ingest, baileys, reports, transactions, users, proactive };
+  return {
+    ingest,
+    baileys,
+    reports,
+    transactions,
+    users,
+    proactive,
+    reminders,
+    reminderScheduler,
+    reminderRepository,
+  };
 }

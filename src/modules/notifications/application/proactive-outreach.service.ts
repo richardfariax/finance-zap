@@ -4,7 +4,6 @@ import type { ReportsService } from '../../reports/application/reports.service.j
 import type { UserRepository } from '../../users/infra/user.repository.js';
 import type { OutboundMessagesPort } from '../../whatsapp/ports/outbound-messages.port.js';
 import {
-  pickDidacticTip,
   replyAutomatedDaySummary,
   replyPinConversationNudge,
 } from '../../whatsapp/presentation/bot-replies.js';
@@ -80,9 +79,7 @@ export class ProactiveOutreachService {
       const ref = anyInstantOnCalendarDate(yesterdayKey, timeZone);
       const day = await this.reports.dailySummary(userId, timeZone, ref);
       const cats = await this.reports.categoryBreakdownToday(userId, timeZone, ref);
-      const tipSeed =
-        userId.charCodeAt(0) + yesterdayKey.split('-').reduce((a, b) => a + Number(b), 0);
-      const text = replyAutomatedDaySummary(day, cats, pickDidacticTip(tipSeed));
+      const text = replyAutomatedDaySummary(day, cats);
       await this.outbound.sendText(jid, text);
       await this.users.setLastDailySummaryForDate(userId, yesterdayKey);
     } catch (err) {

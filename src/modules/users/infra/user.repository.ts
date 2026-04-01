@@ -103,6 +103,7 @@ export class UserRepository {
       await tx.transaction.deleteMany({ where: { userId } });
       await tx.rule.deleteMany({ where: { userId } });
       await tx.recurringPattern.deleteMany({ where: { userId } });
+      await tx.userReminder.deleteMany({ where: { userId } });
       await tx.message.deleteMany({ where: { userId } });
       await tx.category.deleteMany({ where: { userId } });
       await tx.auditLog.deleteMany({ where: { userId } });

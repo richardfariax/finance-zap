@@ -23,6 +23,15 @@ const envSchema = z.object({
   FFMPEG_PATH: z.string().min(1).default('ffmpeg'),
   DEFAULT_TIMEZONE: z.string().min(1).default('America/Sao_Paulo'),
   DEFAULT_LOCALE: z.string().min(1).default('pt-BR'),
+  /** Hora local (0–23) para lembretes só com data, sem horário explícito. */
+  REMINDER_DEFAULT_DAY_HOUR: z.coerce.number().int().min(0).max(23).default(9),
+  /** Aviso antecipado padrão (minutos) para compromissos com hora. */
+  REMINDER_EARLY_MINUTES: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(24 * 60)
+    .default(15),
 });
 
 export type AppEnv = z.infer<typeof envSchema>;
