@@ -6,6 +6,8 @@ import { waChatJidFromDigits } from '../../shared/utils/whatsapp-jid.js';
 import type { AppWiring } from '../wiring.js';
 import { TesseractOcrProvider } from '../../modules/media/infra/tesseract-ocr.provider.js';
 import { WhisperCliTranscriptionProvider } from '../../modules/media/infra/whisper-cli.transcription.provider.js';
+import { interpretBrazilianReceipt } from '../../modules/receipts/application/brazilian-receipt.interpreter.js';
+import { receiptInterpretationToJson } from '../../modules/receipts/domain/receipt-interpretation.js';
 
 const simulateTextBody = z.object({
   whatsappNumber: z.string().min(8),
@@ -49,11 +51,46 @@ export function registerDevRoutes(app: FastifyInstance, wiring: AppWiring): void
     return result;
   });
 
+  /** Pós-processamento de cupom/NF (texto já extraído por OCR ou colado). */
+  app.post('/dev/interpret-receipt', async (request, reply) => {
+    const body = z.object({ text: z.string().min(1) }).safeParse(request.body);
+    if (!body.success) return reply.badRequest('text obrigatório');
+    const r = interpretBrazilianReceipt(body.data.text);
+    return receiptInterpretationToJson(r);
+  });
+
   app.post('/dev/simulate-transcription', async (request, reply) => {
     const body = z.object({ audioPath: z.string().min(1) }).safeParse(request.body);
     if (!body.success) return reply.badRequest('audioPath obrigatório');
     const tr = new WhisperCliTranscriptionProvider();
     const result = await tr.transcribe(body.data.audioPath);
     return result;
+  });
+
+  const whatsappQuery = z.object({
+    whatsappNumber: z.string().min(8),
+  });
+
+  app.get('/dev/reminders', async (request, reply) => {
+    const q = whatsappQuery.safeParse(request.query);
+    if (!q.success) return reply.badRequest('whatsappNumber obrigatório');
+    const digits = q.data.whatsappNumber.replace(/\D/g, '');
+    const user = await wiring.users.findByWhatsappNumber(digits);
+    if (!user) return reply.notFound('Usuário não encontrado');
+    const rows = await wiring.reminderRepository.listActiveForUser(user.id, { limit: 80 });
+    return rows.map((r) => ({
+      id: r.id,
+      title: r.title,
+      eventAt: r.eventAt.toISOString(),
+      notifyAt: r.notifyAt.toISOString(),
+      allDay: r.allDay,
+      recurrence: r.recurrence,
+      timezone: r.timezone,
+    }));
+  });
+
+  app.post('/dev/reminders/tick', async (_request, reply) => {
+    const processed = await wiring.reminderScheduler.tickOnce();
+    return reply.send({ ok: true, processed });
   });
 }

@@ -2,7 +2,9 @@ import { normalizeForMatch } from '../../../shared/utils/normalize-text.js';
 
 export function isAffirmative(text: string): boolean {
   const n = normalizeForMatch(text);
-  return /^(sim|s|ok|confirmo|isso|certo|beleza|pode|manda|fecha)\b/.test(n);
+  return /^(sim|s|si|ok|confirmo|confirmar|isso|certo|certeza|beleza|blz|pode|manda|fecha|isso\s+ai|isso\s+aí)\b/.test(
+    n,
+  );
 }
 
 export function isExplicitCancellation(text: string): boolean {

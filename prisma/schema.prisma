@@ -63,6 +63,25 @@ enum RecurringFrequency {
   UNKNOWN
 }
 
+enum ReminderStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum ReminderRecurrence {
+  NONE
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+enum ReminderSource {
+  TEXT
+  AUDIO
+  WHATSAPP_OTHER
+}
+
 model User {
   id                      String    @id @default(uuid()) @db.Uuid
   whatsappNumber          String    @unique @map("whatsapp_number")
@@ -84,6 +103,7 @@ model User {
   recurringPatterns    RecurringPattern[]
   auditLogs            AuditLog[]
   pendingConfirmations PendingConfirmation[]
+  reminders            UserReminder[]
 
   @@map("users")
 }
@@ -228,4 +248,46 @@ model PendingConfirmation {
 
   @@index([userId, expiresAt])
   @@map("pending_confirmations")
+}
+
+model UserReminder {
+  id              String             @id @default(uuid()) @db.Uuid
+  userId          String             @map("user_id") @db.Uuid
+  title           String
+  notes           String?            @db.Text
+  eventAt         DateTime           @map("event_at")
+  allDay          Boolean            @default(false) @map("all_day")
+  notifyAt        DateTime           @map("notify_at")
+  earlyMinutes    Int                @default(15) @map("early_minutes")
+  recurrence      ReminderRecurrence @default(NONE)
+  recurrenceMeta  Json?              @map("recurrence_meta")
+  status          ReminderStatus     @default(ACTIVE)
+  timezone        String
+  sourceText      String?            @map("source_text") @db.Text
+  source          ReminderSource     @default(TEXT)
+  sourceMessageId String?            @map("source_message_id") @db.Uuid
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
+  completedAt     DateTime?          @map("completed_at")
+  canceledAt      DateTime?          @map("canceled_at")
+
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deliveries ReminderDelivery[]
+
+  @@index([userId, status, notifyAt])
+  @@index([status, notifyAt])
+  @@map("user_reminders")
+}
+
+model ReminderDelivery {
+  id         String   @id @default(uuid()) @db.Uuid
+  reminderId String   @map("reminder_id") @db.Uuid
+  slotAt     DateTime @map("slot_at")
+  sentAt     DateTime @default(now()) @map("sent_at")
+
+  reminder UserReminder @relation(fields: [reminderId], references: [id], onDelete: Cascade)
+
+  @@unique([reminderId, slotAt])
+  @@index([reminderId])
+  @@map("reminder_deliveries")
 }

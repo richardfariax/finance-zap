@@ -281,8 +281,20 @@ function detectReportIntent(normalized: string): UserIntentType | null {
     return UserIntent.HELP;
   }
 
+  /** “Onde / no que foi o dinheiro” — não confundir com lançamento “gastei X”. */
+  if (
+    /\b(onde\s+(?:mais\s+)?gastei|gastei\s+mais|onde\s+(?:estou\s+)?gastando(?:\s+mais)?|onde\s+(?:eu\s+)?gasto\s+mais|no\s+que\s+(?:mais\s+)?gastei|em\s+que\s+gastei)\b/.test(
+      normalized,
+    )
+  ) {
+    if (/\b(hoje|ontem|neste dia|nesse dia|no dia|durante o dia)\b/.test(normalized)) {
+      return UserIntent.GET_TODAY_SUMMARY;
+    }
+    return UserIntent.GET_CATEGORY_BREAKDOWN;
+  }
+
   const scopeBase =
-    /\b(quanto gast(ei)?|total de gastos|gastos|resumo|balanco|balanço|levantamento|extrato)\b/.test(
+    /\b(quanto gast(ei)?|o que gast(ei)?|no que gast(ei)?|em que gast(ei)?|que eu gast(ei)|total de gastos|gastos|resumo|balanco|balanço|levantamento|extrato)\b/.test(
       normalized,
     );
 
@@ -571,7 +583,11 @@ export class FinancialParserService {
       confidence,
       clarification:
         status === ParseStatus.NEEDS_CONFIRMATION
-          ? replyParserSuggestCategoryName(suggested.category?.name ?? null)
+          ? replyParserSuggestCategoryName(
+              suggested.category?.name ?? null,
+              money.value,
+              transactionType,
+            )
           : undefined,
       sourceConfidence: ctx.sourceConfidence,
     };

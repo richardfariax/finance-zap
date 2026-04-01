@@ -5,6 +5,7 @@ export const PendingContextType = {
   CLARIFY_CATEGORY: 'CLARIFY_CATEGORY',
   LOW_CONFIDENCE_CREATE: 'LOW_CONFIDENCE_CREATE',
   CONFIRM_AUDIO_TRANSCRIPT: 'CONFIRM_AUDIO_TRANSCRIPT',
+  CONFIRM_RECEIPT_OCR: 'CONFIRM_RECEIPT_OCR',
 } as const;
 
 export type PendingContextTypeValue = (typeof PendingContextType)[keyof typeof PendingContextType];
