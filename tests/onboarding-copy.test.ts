@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  firstNameFromPush,
-  pickDidacticTip,
-} from '../src/modules/whatsapp/presentation/bot-replies.js';
+import { firstNameFromPush } from '../src/modules/whatsapp/presentation/bot-replies.js';
 import { yesterdayCalendarKeyInTz } from '../src/shared/utils/zoned-date-key.js';
 
 describe('firstNameFromPush', () => {
@@ -13,14 +10,6 @@ describe('firstNameFromPush', () => {
   it('fallback amigo', () => {
     expect(firstNameFromPush('')).toBe('amigo');
     expect(firstNameFromPush(null)).toBe('amigo');
-  });
-});
-
-describe('pickDidacticTip', () => {
-  it('retorna dicas do pool', () => {
-    expect(pickDidacticTip(0).length).toBeGreaterThan(5);
-    const set = new Set([0, 1, 2, 3, 4, 5].map((i) => pickDidacticTip(i)));
-    expect(set.size).toBeGreaterThan(1);
   });
 });
 

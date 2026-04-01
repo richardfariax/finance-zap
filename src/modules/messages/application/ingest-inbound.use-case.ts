@@ -1,4 +1,4 @@
-import type { Category } from '@prisma/client';
+import type { Category, Prisma, ReminderSource } from '@prisma/client';
 import {
   ConfidenceLevel,
   MessageDirection,
@@ -14,7 +14,7 @@ import type { NormalizedIngestMessage } from '../../../shared/domain/ingest-mess
 import { accountKeyFromWaChatJid } from '../../../shared/utils/whatsapp-jid.js';
 import { UserIntent, ParseStatus, type UserIntentType } from '../../../shared/types/intent.js';
 import { unlinkIgnoreMissing } from '../../../shared/utils/unlink-ignore-missing.js';
-import { normalizeForMatch } from '../../../shared/utils/normalize-text.js';
+import { normalizeDescription, normalizeForMatch } from '../../../shared/utils/normalize-text.js';
 import { matchesResetUserDataCommand } from '../../../shared/utils/reset-user-data-command.js';
 import { isMoneyOnlySegment } from '../../../shared/utils/split-financial-segments.js';
 import { normalizeVoiceNoteText } from '../../../shared/utils/voice-transcript-normalize.js';
@@ -22,12 +22,20 @@ import type { AuditService } from '../../audit/application/audit.service.js';
 import type { CategoryRepository } from '../../categories/infra/category.repository.js';
 import { PendingContextType } from '../../confirmations/domain/pending-context.js';
 import { AudioTranscriptPayloadSchema } from '../../confirmations/dto/audio-transcript.payload.js';
+import { ReceiptOcrConfirmPayloadSchema } from '../../confirmations/dto/receipt-ocr-confirm.payload.js';
 import { ReportScopePayloadSchema } from '../../confirmations/dto/report-scope.payload.js';
 import { TransactionDraftPayloadSchema } from '../../confirmations/dto/transaction-draft.payload.js';
 import type { PendingConfirmationRepository } from '../../confirmations/infra/pending-confirmation.repository.js';
 import { MediaStorageService } from '../../media/application/media-storage.service.js';
 import { TesseractOcrProvider } from '../../media/infra/tesseract-ocr.provider.js';
 import { WhisperCliTranscriptionProvider } from '../../media/infra/whisper-cli.transcription.provider.js';
+import {
+  interpretBrazilianReceipt,
+  resolveReceiptOccurredAtUtc,
+} from '../../receipts/application/brazilian-receipt.interpreter.js';
+import { appCategoryNameFromReceiptTipo } from '../../receipts/application/map-receipt-tipo-to-category.js';
+import type { ReceiptInterpretation } from '../../receipts/domain/receipt-interpretation.js';
+import { receiptInterpretationToJson } from '../../receipts/domain/receipt-interpretation.js';
 import { FinancialParserService } from '../../parser/application/financial-parser.service.js';
 import type { ParseResult } from '../../parser/domain/parse-result.js';
 import type { RecurrenceDetectorService } from '../../recurrence/application/recurrence-detector.service.js';
@@ -42,6 +50,7 @@ import type { TransactionRepository } from '../../transactions/infra/transaction
 import type { TransactionDraftPayload } from '../../confirmations/dto/transaction-draft.payload.js';
 import type { OutboundMessagesPort } from '../../whatsapp/ports/outbound-messages.port.js';
 import {
+  TRANSACTION_TYPE_CHOICE_PHRASE,
   replyAskReportScope,
   replyAudioTranscriptionPreview,
   replyCancelLowConfidence,
@@ -81,9 +90,13 @@ import {
   replyTopExpenses,
   replyTranscriptionEmpty,
   replyTransferRegistered,
+  replyReceiptOcrPreview,
+  replyReceiptOcrDismissed,
+  occurrenceLabelForReply,
 } from '../../whatsapp/presentation/bot-replies.js';
 import type { EnsureUserUseCase } from '../../users/application/ensure-user.use-case.js';
 import type { UserRepository } from '../../users/infra/user.repository.js';
+import type { RemindersAppService } from '../../reminders/application/reminders.app-service.js';
 import type { MessageRepository } from '../infra/message.repository.js';
 import {
   isAffirmative,
@@ -189,6 +202,7 @@ export class IngestInboundUseCase {
     private readonly recurrence: RecurrenceDetectorService,
     private readonly audit: AuditService,
     private readonly outbound: OutboundMessagesPort,
+    private readonly reminders: RemindersAppService,
     private readonly log?: Logger,
   ) {}
 
@@ -220,6 +234,7 @@ export class IngestInboundUseCase {
     let processedText = rawText;
     let mediaPath: string | null = null;
     let sourceConfidence: ConfidenceLevel | undefined;
+    let receiptOcrOffer: ReceiptInterpretation | null = null;
 
     const msg = await this.messages.create({
       user: { connect: { id: user.id } },
@@ -244,10 +259,12 @@ export class IngestInboundUseCase {
     const skipWelcomeForReset =
       quickSegs.length === 1 && matchesResetUserDataCommand(quickSegs[0] ?? '');
 
+    let suppressGreetingReply = false;
     if (user.onboardingWelcomeSentAt == null && isFirstInbound && !skipWelcomeForReset) {
       const who = firstNameFromPush(user.displayName ?? event.pushName);
       await this.safeSend(replyJid, replyOnboardingWelcome(who));
       await this.users.markOnboardingWelcomeSent(user.id, new Date());
+      suppressGreetingReply = true;
     }
 
     if (
@@ -265,6 +282,16 @@ export class IngestInboundUseCase {
           const ocr = await this.ocr.extractText(mediaPath);
           processedText = ocr.text;
           sourceConfidence = ocr.confidence;
+          const ocrTrim = processedText.trim();
+          if (ocrTrim.length > 0) {
+            const receipt = interpretBrazilianReceipt(ocrTrim);
+            if (
+              receipt.valor_total > 0 &&
+              (receipt.confianca === 'alta' || receipt.confianca === 'media')
+            ) {
+              receiptOcrOffer = receipt;
+            }
+          }
         } catch {
           processedText = rawText ?? '';
           sourceConfidence = ConfidenceLevel.LOW;
@@ -292,13 +319,53 @@ export class IngestInboundUseCase {
       }
     }
 
+    const messageMetadata: Prisma.InputJsonValue = {
+      mediaPath,
+      sourceConfidence,
+      ...(receiptOcrOffer !== null
+        ? {
+            receiptInterpretation: receiptInterpretationToJson(
+              receiptOcrOffer,
+            ) as Prisma.JsonObject,
+          }
+        : {}),
+    };
+
     await this.messages.updateMetadata(msg.id, {
       processedText,
-      metadata: {
-        mediaPath,
-        sourceConfidence,
-      },
+      metadata: messageMetadata,
     });
+
+    if (receiptOcrOffer !== null) {
+      const cats = await this.categories.listForUser(user.id);
+      const targetName = appCategoryNameFromReceiptTipo(receiptOcrOffer.tipo);
+      const cat = cats.find((c) => normalizeForMatch(c.name) === normalizeForMatch(targetName));
+      const desc = receiptOcrOffer.estabelecimento.slice(0, 120);
+      const occurredAt = resolveReceiptOccurredAtUtc(
+        receiptOcrOffer.data,
+        event.receivedAt,
+        user.timezone,
+      );
+      await this.pending.deleteForUser(user.id);
+      await this.pending.create({
+        userId: user.id,
+        messageId: msg.id,
+        contextType: PendingContextType.CONFIRM_RECEIPT_OCR,
+        payload: {
+          amount: new Decimal(receiptOcrOffer.valor_total).toFixed(2),
+          currency: 'BRL',
+          description: desc,
+          normalizedDescription: normalizeDescription(desc),
+          categoryId: cat?.id ?? null,
+          occurredAt: occurredAt.toISOString(),
+          userTimezone: user.timezone,
+          imageMessageId: msg.id,
+        },
+        expiresAt: addHours(new Date(), 24),
+      });
+      await this.safeSend(replyJid, replyReceiptOcrPreview(receiptOcrOffer));
+      return;
+    }
 
     const textForPipeline = (processedText ?? '').replace(/\s+/g, ' ').trim();
     if (!textForPipeline) {
@@ -356,6 +423,7 @@ export class IngestInboundUseCase {
       textForPipeline,
       user.timezone,
       sourceConfidence,
+      { reminderSource: 'TEXT', suppressGreetingReply },
     );
   }
 
@@ -366,8 +434,14 @@ export class IngestInboundUseCase {
     text: string,
     userTimezone: string,
     sourceConfidence: ConfidenceLevel | undefined,
-    opts?: { transactionSourceMessageId?: string },
+    opts?: {
+      transactionSourceMessageId?: string;
+      reminderSource?: ReminderSource;
+      /** Evita segundo “oi” após boas-vindas na primeira mensagem. */
+      suppressGreetingReply?: boolean;
+    },
   ): Promise<void> {
+    const reminderSource: ReminderSource = opts?.reminderSource ?? 'TEXT';
     const segments = prepareTransactionInboundSegments(text);
     if (segments.length > 1) {
       await this.pending.deleteForUser(userId);
@@ -389,9 +463,23 @@ export class IngestInboundUseCase {
         continue;
       }
 
+      const now = new Date();
+      const reminderResult = await this.reminders.handleInbound(
+        userId,
+        seg,
+        userTimezone,
+        reminderSource,
+        messageId,
+        now,
+      );
+      if (reminderResult.handled) {
+        await this.safeSend(replyJid, reminderResult.message);
+        continue;
+      }
+
       const parsed = this.parser.parse({
         text: seg,
-        now: new Date(),
+        now,
         userTimezone,
         rules,
         categories: cats,
@@ -406,6 +494,7 @@ export class IngestInboundUseCase {
       await this.dispatchParsed(userId, messageId, replyJid, parsed, userTimezone, {
         inboundText: seg,
         transactionSourceMessageId: opts?.transactionSourceMessageId,
+        suppressGreetingReply: opts?.suppressGreetingReply,
       });
 
       const pendingNow = await this.pending.findLatestActive(userId, new Date());
@@ -440,7 +529,7 @@ export class IngestInboundUseCase {
       transcribedText.trim(),
       userTimezone,
       sourceConfidence,
-      { transactionSourceMessageId: audioMessageId },
+      { transactionSourceMessageId: audioMessageId, reminderSource: 'AUDIO' },
     );
   }
 
@@ -484,6 +573,49 @@ export class IngestInboundUseCase {
         payload.data.transcribedText,
         payload.data.userTimezone,
         payload.data.audioMessageId,
+      );
+      return true;
+    }
+
+    if (active.contextType === PendingContextType.CONFIRM_RECEIPT_OCR) {
+      const payload = ReceiptOcrConfirmPayloadSchema.safeParse(active.payload);
+      if (!payload.success) {
+        await this.pending.deleteById(active.id);
+        return false;
+      }
+      if (isExplicitCancellation(text)) {
+        await this.pending.deleteById(active.id);
+        await this.safeSend(replyJid, replyReceiptOcrDismissed());
+        return true;
+      }
+      if (!isAffirmative(text)) {
+        await this.pending.deleteById(active.id);
+        return false;
+      }
+      await this.pending.deleteById(active.id);
+      const amount = new Decimal(payload.data.amount);
+      const occurredAt = new Date(payload.data.occurredAt);
+      const tx = await this.createTx.execute({
+        userId,
+        sourceMessageId: messageId,
+        type: TransactionType.EXPENSE,
+        amount,
+        currency: payload.data.currency,
+        description: payload.data.description,
+        normalizedDescription: payload.data.normalizedDescription,
+        categoryId: payload.data.categoryId,
+        occurredAt,
+        confidence: ConfidenceLevel.MEDIUM,
+      });
+      await this.replyCreated(
+        replyJid,
+        TransactionType.EXPENSE,
+        amount,
+        tx.description,
+        tx.categoryId,
+        userId,
+        tx.occurredAt,
+        payload.data.userTimezone,
       );
       return true;
     }
@@ -554,6 +686,8 @@ export class IngestInboundUseCase {
         tx.description,
         draft.data.suggestedCategoryId,
         userId,
+        tx.occurredAt,
+        userTimezone,
       );
       return true;
     }
@@ -561,6 +695,11 @@ export class IngestInboundUseCase {
     if (active.contextType === PendingContextType.LOW_CONFIDENCE_CREATE) {
       const draft = TransactionDraftPayloadSchema.safeParse(active.payload);
       if (!draft.success) {
+        await this.pending.deleteById(active.id);
+        return false;
+      }
+      const remProbe = this.reminders.parseUtterance(text, new Date(), userTimezone);
+      if (remProbe.kind !== 'NONE') {
         await this.pending.deleteById(active.id);
         return false;
       }
@@ -599,7 +738,7 @@ export class IngestInboundUseCase {
           await this.safeSend(replyJid, replyInvalidPendingContext());
           return true;
         }
-        await this.createTx.execute({
+        const tx = await this.createTx.execute({
           userId,
           sourceMessageId: messageId,
           type,
@@ -615,9 +754,11 @@ export class IngestInboundUseCase {
           replyJid,
           type,
           amount,
-          draft.data.description,
+          tx.description,
           resolvedCategoryId,
           userId,
+          tx.occurredAt,
+          userTimezone,
         );
         return true;
       }
@@ -740,12 +881,17 @@ export class IngestInboundUseCase {
     replyJid: string,
     parsed: ParseResult,
     timeZone: string,
-    opts?: { transactionSourceMessageId?: string; inboundText?: string },
+    opts?: {
+      transactionSourceMessageId?: string;
+      inboundText?: string;
+      suppressGreetingReply?: boolean;
+    },
   ): Promise<void> {
     const txSourceMessageId = opts?.transactionSourceMessageId ?? messageId;
     const inboundText = opts?.inboundText ?? parsed.description;
     switch (parsed.intent) {
       case UserIntent.GREETING:
+        if (opts?.suppressGreetingReply) return;
         await this.safeSend(replyJid, replyIntro());
         return;
       case UserIntent.HELP:
@@ -816,9 +962,7 @@ export class IngestInboundUseCase {
       if (!parsed.amount || !parsed.transactionType) return;
 
       if (parsed.status === ParseStatus.NEEDS_CONFIRMATION && parsed.clarification) {
-        const isTypeClarification = parsed.clarification.includes(
-          'despesa, receita ou transferência',
-        );
+        const isTypeClarification = parsed.clarification.includes(TRANSACTION_TYPE_CHOICE_PHRASE);
         if (isTypeClarification) {
           await this.pending.create({
             userId,
@@ -864,7 +1008,7 @@ export class IngestInboundUseCase {
         return;
       }
 
-      await this.createTx.execute({
+      const tx = await this.createTx.execute({
         userId,
         sourceMessageId: txSourceMessageId,
         type: parsed.transactionType,
@@ -880,9 +1024,11 @@ export class IngestInboundUseCase {
         replyJid,
         parsed.transactionType,
         parsed.amount,
-        parsed.description,
+        tx.description,
         parsed.suggestedCategoryId,
         userId,
+        tx.occurredAt,
+        timeZone,
       );
       return;
     }
@@ -901,18 +1047,31 @@ export class IngestInboundUseCase {
     description: string,
     categoryId: string | null | undefined,
     userId: string,
+    occurredAt: Date,
+    userTimezone: string,
   ): Promise<void> {
     const cats = await this.categories.listForUser(userId);
     const cat = categoryId ? cats.find((c) => c.id === categoryId) : undefined;
     const place = description.slice(0, 40);
+    const dateLabel = occurrenceLabelForReply(occurredAt, new Date(), userTimezone);
+    let dayBalance: Decimal | undefined;
+    try {
+      const day = await this.reports.dailySummary(userId, userTimezone);
+      dayBalance = day.balance;
+    } catch {
+      dayBalance = undefined;
+    }
     if (type === TransactionType.EXPENSE) {
-      await this.safeSend(replyJid, replyExpenseRegistered(amount, place, cat?.name ?? 'Outros'));
+      await this.safeSend(
+        replyJid,
+        replyExpenseRegistered(amount, place, cat?.name ?? 'Outros', dateLabel, dayBalance),
+      );
       return;
     }
     if (type === TransactionType.INCOME) {
-      await this.safeSend(replyJid, replyIncomeRegistered(amount, place));
+      await this.safeSend(replyJid, replyIncomeRegistered(amount, place, dateLabel, dayBalance));
       return;
     }
-    await this.safeSend(replyJid, replyTransferRegistered(amount, place));
+    await this.safeSend(replyJid, replyTransferRegistered(amount, place, dateLabel, dayBalance));
   }
 }

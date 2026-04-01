@@ -14,7 +14,13 @@ export class TesseractOcrProvider implements OcrProvider {
     } = await worker.recognize(buffer);
     await worker.terminate();
 
-    const trimmed = text.replace(/\s+/g, ' ').trim();
+    const trimmed = text
+      .replace(/\r\n/g, '\n')
+      .replace(/\r/g, '\n')
+      .split('\n')
+      .map((line) => line.replace(/[ \t]+/g, ' ').trim())
+      .filter((line) => line.length > 0)
+      .join('\n');
     const conf =
       confidence >= 70
         ? ConfidenceLevel.HIGH
